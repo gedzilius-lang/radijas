@@ -26,6 +26,7 @@ Or run each step manually:
 ./07-setup-ssl.sh             # Get SSL certificates
 ./08-create-player.sh         # Create web player
 ./09-finalize.sh              # Start everything
+./10-upgrade-player.sh        # Enhanced dark purple player (optional)
 ```
 
 ## Architecture
@@ -135,6 +136,22 @@ Requirements:
 2. Service: Custom
 3. Server: `rtmp://ingest.peoplewelike.club:1935/live`
 4. Stream Key: `pwl-live-2024?pwd=R4d10L1v3Str34m!`
+
+## Enhanced Player (Optional)
+
+After initial installation, you can upgrade to the enhanced dark purple player:
+
+```bash
+./10-upgrade-player.sh
+```
+
+Features:
+- Dark purple theme with floating particle animations
+- AutoDJ/LIVE indicator with red glow when live
+- Video toggle button for audio-only mode
+- Chat sidebar with auto-assigned nicknames
+- Mobile responsive (slide-out chat on mobile)
+- Listener count display
 
 ## URLs
 
