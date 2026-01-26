@@ -1,6 +1,7 @@
 # People We Like Radio — Backend Technical Handover
 
-**Date:** January 2026
+**Status:** ✅ WORKING
+**Last Updated:** January 2026
 **Server:** srv1178155 (72.60.181.89)
 **OS:** Ubuntu 22.04 LTS
 
@@ -41,8 +42,7 @@
     │                      SWITCH DAEMON                               │
     │                   /usr/local/bin/radio-switchd                   │
     │                                                                  │
-    │   • Polls RTMP stats every 1 second                             │
-    │   • Detects if live stream is active                            │
+    │   • Checks /hls/live/index.m3u8 freshness every 1 second        │
     │   • Writes "live" or "autodj" to /run/radio/active              │
     └──────────────────────────┬──────────────────────────────────────┘
                                │
@@ -52,7 +52,8 @@
     │                   /usr/local/bin/radio-hls-relay                 │
     │                                                                  │
     │   • Reads /run/radio/active to know current source              │
-    │   • Creates stable /hls/current/ with monotonic segment IDs     │
+    │   • COPIES segments to /hls/current/ (not symlinks)             │
+    │   • Creates stable playlist with monotonic sequence IDs          │
     │   • Inserts #EXT-X-DISCONTINUITY on source switch               │
     │   • Enables seamless switching WITHOUT page refresh             │
     └──────────────────────────┬──────────────────────────────────────┘
@@ -73,72 +74,134 @@
 
 ---
 
-## 2. Services
+## 2. Services (All Active)
+
+| Service | Status | Description |
+|---------|--------|-------------|
+| `autodj-stream` | ✅ Active | FFmpeg-based AutoDJ (video + audio) |
+| `radio-switchd` | ✅ Active | Live/AutoDJ detection daemon |
+| `radio-hls-relay` | ✅ Active | Seamless HLS relay (copy mode) |
+| `nginx` | ✅ Active | Web server + RTMP server |
+| `radio-cleanup.timer` | ✅ Active | Cleanup old segments every 5 min |
 
 ### 2.1 autodj-stream.service
-**Purpose:** Generates 24/7 AutoDJ stream (video + audio) via ffmpeg
 
-```
-Service:     autodj-stream.service
-Script:      /usr/local/bin/autodj-stream
-User:        root
-Restart:     always
-```
+**Script:** `/usr/local/bin/autodj-stream`
 
-**What it does:**
-- Picks random video loop from `/var/lib/radio/loops/`
-- Picks random MP3 from `/var/lib/radio/music/default/`
-- Combines video (looped) + audio (one song at a time)
-- Outputs to `rtmp://127.0.0.1:1935/autodj/index`
-- Updates now-playing metadata in `/var/www/radio/data/nowplaying.json`
-- When song ends, picks new random song and continues
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOOPS_DIR="/var/lib/radio/loops"
+MUSIC_DIR="/var/lib/radio/music/default"
+NOWPLAYING="/var/www/radio/data/nowplaying.json"
+OUT="rtmp://127.0.0.1:1935/autodj/index"
+
+# 1080p @ 30fps settings
+FPS=30
+FRAG=6
+GOP=$((FPS*FRAG))
+
+log(){ echo "[$(date -Is)] $*"; }
+
+get_random_file() {
+    local dir="$1"
+    local ext="$2"
+    shuf -n1 -e "$dir"/*."$ext" 2>/dev/null || true
+}
+
+update_nowplaying() {
+    local file="$1"
+    local basename=$(basename "$file")
+    local title="${basename%.*}"
+    local artist=""
+    if [[ "$title" == *" - "* ]]; then
+        artist="${title%% - *}"
+        title="${title#* - }"
+    fi
+    printf '{"title":"%s","artist":"%s","mode":"autodj"}' "$title" "$artist" > "$NOWPLAYING"
+}
+
+log "AutoDJ starting (1080p@30fps)..."
+
+while true; do
+    LOOP=$(get_random_file "$LOOPS_DIR" "mp4")
+    MUSIC=$(get_random_file "$MUSIC_DIR" "mp3")
+
+    [[ -z "$LOOP" ]] && { log "No loops"; sleep 5; continue; }
+    [[ -z "$MUSIC" ]] && { log "No music"; sleep 5; continue; }
+
+    DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$MUSIC" 2>/dev/null | cut -d. -f1)
+    [[ -z "$DURATION" || "$DURATION" -lt 10 ]] && DURATION=180
+
+    update_nowplaying "$MUSIC"
+    log "Playing: $(basename "$MUSIC") (${DURATION}s)"
+
+    ffmpeg -hide_banner -loglevel error \
+      -re -stream_loop -1 -i "$LOOP" \
+      -re -i "$MUSIC" \
+      -map 0:v:0 -map 1:a:0 \
+      -t "$DURATION" \
+      -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=${FPS}" \
+      -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p \
+      -r ${FPS} -g ${GOP} -keyint_min ${GOP} -sc_threshold 0 \
+      -b:v 2500k -maxrate 2500k -bufsize 5000k \
+      -c:a aac -b:a 128k -ar 44100 -ac 2 \
+      -flvflags no_duration_filesize \
+      -f flv "$OUT" 2>&1 || true
+
+    sleep 0.5
+done
+```
 
 ### 2.2 radio-switchd.service
-**Purpose:** Detects live input and triggers source switching
 
-```
-Service:     radio-switchd.service
-Script:      /usr/local/bin/radio-switchd
-User:        root
-Restart:     always
-```
+**Script:** `/usr/local/bin/radio-switchd`
 
-**What it does:**
-- Polls `http://127.0.0.1:8089/rtmp_stat` every 1 second
-- Checks if `/hls/live/index.m3u8` exists and has fresh segments
-- Checks RTMP client count for live application
-- Writes current active source to `/run/radio/active`:
-  - `live` — when live stream is detected
-  - `autodj` — when no live stream (default)
-- Updates `/var/www/radio/data/nowplaying.json` to "LIVE-SHOW" when live
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIVE_M3U8="/var/www/hls/live/index.m3u8"
+ACTIVE="/run/radio/active"
+NOWPLAYING="/var/www/radio/data/nowplaying.json"
+
+mkdir -p /run/radio
+last=""
+
+is_live() {
+    [[ ! -f "$LIVE_M3U8" ]] && return 1
+    local age=$(( $(date +%s) - $(stat -c %Y "$LIVE_M3U8" 2>/dev/null || echo 0) ))
+    [[ $age -gt 10 ]] && return 1
+    grep -qE '^index-[0-9]+\.ts' "$LIVE_M3U8" 2>/dev/null
+}
+
+while true; do
+    if is_live; then
+        if [[ "$last" != "live" ]]; then
+            echo "live" > "$ACTIVE"
+            echo '{"title":"LIVE","artist":"Live Broadcast","mode":"live"}' > "$NOWPLAYING"
+            last="live"
+        fi
+    else
+        if [[ "$last" != "autodj" ]]; then
+            echo "autodj" > "$ACTIVE"
+            last="autodj"
+        fi
+    fi
+    sleep 1
+done
+```
 
 ### 2.3 radio-hls-relay.service
-**Purpose:** Creates stable HLS output for seamless switching
 
-```
-Service:     radio-hls-relay.service
-Script:      /usr/local/bin/radio-hls-relay (Python)
-User:        root
-Restart:     always
-State File:  /var/lib/radio-hls-relay/state.json
-```
+**Script:** `/usr/local/bin/radio-hls-relay` (Python)
 
-**What it does:**
-- Reads `/run/radio/active` to determine current source
-- Reads segments from `/var/www/hls/autodj/` or `/var/www/hls/live/`
-- Creates symlinks in `/var/www/hls/current/` with stable names (`seg-0.ts`, `seg-1.ts`, etc.)
-- Generates `/var/www/hls/current/index.m3u8` with monotonic sequence numbers
-- Inserts `#EXT-X-DISCONTINUITY` when switching sources
-- This is what enables switching WITHOUT page refresh
-
-### 2.4 nginx.service
-**Purpose:** Web server and RTMP server
-
-```
-Service:     nginx.service
-Config:      /etc/nginx/nginx.conf
-RTMP Config: /etc/nginx/rtmp.conf
-```
+Key features:
+- **Copy mode** (not symlinks) - copies segments to /hls/current/
+- Maintains 8-segment window
+- Inserts `#EXT-X-DISCONTINUITY` on source switch
+- Monotonic sequence IDs for seamless player experience
 
 ---
 
@@ -155,10 +218,9 @@ rtmp {
         ping 30s;
         ping_timeout 10s;
 
-        # Live ingest (external encoders)
         application live {
             live on;
-            on_publish http://127.0.0.1:8088/auth;  # Authentication
+            on_publish http://127.0.0.1:8088/auth;
             hls on;
             hls_path /var/www/hls/live;
             hls_fragment 6s;
@@ -169,7 +231,6 @@ rtmp {
             exec_publish_done /usr/local/bin/hls-switch autodj;
         }
 
-        # AutoDJ output (localhost only)
         application autodj {
             live on;
             allow publish 127.0.0.1;
@@ -185,19 +246,7 @@ rtmp {
 }
 ```
 
-### 3.2 RTMP Statistics Endpoint
-**File:** `/etc/nginx/conf.d/rtmp_stat.conf`
-
-```nginx
-server {
-    listen 127.0.0.1:8089;
-    location /rtmp_stat {
-        rtmp_stat all;
-    }
-}
-```
-
-### 3.3 RTMP Authentication
+### 3.2 RTMP Authentication
 **File:** `/etc/nginx/conf.d/rtmp_auth.conf`
 
 ```nginx
@@ -215,20 +264,27 @@ server {
 }
 ```
 
-### 3.4 Radio Website Virtual Host
+### 3.3 Web Server (HTTPS)
 **File:** `/etc/nginx/sites-available/radio.peoplewelike.club.conf`
 
 ```nginx
 server {
-    listen 80;
+    listen 443 ssl;
     server_name radio.peoplewelike.club stream.peoplewelike.club ingest.peoplewelike.club;
+
+    ssl_certificate /etc/letsencrypt/live/radio.peoplewelike.club/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/radio.peoplewelike.club/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
     root /var/www/radio.peoplewelike.club;
     index index.html;
 
     location /hls {
         alias /var/www/hls;
+        add_header Cache-Control "no-cache, no-store";
         add_header Access-Control-Allow-Origin *;
-        add_header Cache-Control "no-cache";
+        add_header Access-Control-Allow-Methods "GET, OPTIONS";
         types {
             application/vnd.apple.mpegurl m3u8;
             video/mp2t ts;
@@ -237,8 +293,8 @@ server {
 
     location /api/nowplaying {
         alias /var/www/radio/data/nowplaying.json;
-        add_header Content-Type application/json;
-        add_header Cache-Control "no-cache";
+        default_type application/json;
+        add_header Cache-Control "no-cache, no-store";
         add_header Access-Control-Allow-Origin *;
     }
 
@@ -246,60 +302,48 @@ server {
         try_files $uri $uri/ /index.html;
     }
 }
-```
 
-*(SSL is managed by Certbot — redirects HTTP to HTTPS)*
+server {
+    listen 80;
+    server_name radio.peoplewelike.club stream.peoplewelike.club ingest.peoplewelike.club;
+    return 301 https://$host$request_uri;
+}
+```
 
 ---
 
 ## 4. Directory Structure
 
 ```
-/var/www/
-├── hls/                              # HLS output (nginx-rtmp writes here)
-│   ├── autodj/                       # AutoDJ HLS segments
-│   │   ├── index.m3u8
-│   │   └── index-*.ts
-│   ├── live/                         # Live stream HLS segments
-│   │   ├── index.m3u8
-│   │   └── index-*.ts
-│   └── current/                      # Stable relay output (served to players)
-│       ├── index.m3u8
-│       └── seg-*.ts → symlinks
-├── radio/
-│   └── data/
-│       └── nowplaying.json           # Current track metadata
-└── radio.peoplewelike.club/          # Web player files
-    └── index.html
+/var/www/hls/
+├── autodj/                    # AutoDJ HLS output (nginx-rtmp writes here)
+│   ├── index.m3u8
+│   └── index-*.ts
+├── live/                      # Live stream HLS output
+│   ├── index.m3u8
+│   └── index-*.ts
+└── current/                   # Relay output (COPIED segments, served to players)
+    ├── index.m3u8
+    └── seg-*.ts
 
 /var/lib/radio/
-├── music/                            # Music library
-│   ├── default/                      # Default/fallback music
-│   │   └── *.mp3
-│   ├── monday/
-│   │   ├── morning/                  # 06:00-12:00
-│   │   ├── day/                      # 12:00-18:00
-│   │   └── night/                    # 18:00-06:00
-│   ├── tuesday/                      # ... same structure
-│   └── ...                           # ... for all weekdays
-└── loops/                            # Video loops
-    └── *.mp4                         # 1920x1080, 30fps, H.264
+├── music/
+│   └── default/               # MP3 files for AutoDJ
+└── loops/                     # MP4 video loops (1080p, 30fps, H.264)
+
+/var/www/radio/data/
+└── nowplaying.json            # Current track metadata
 
 /run/radio/
-└── active                            # Current source: "live" or "autodj"
-
-/var/lib/radio-hls-relay/
-└── state.json                        # HLS relay state persistence
-
-/etc/radio/
-└── credentials                       # Stream credentials (backup reference)
+└── active                     # Current source: "live" or "autodj"
 
 /usr/local/bin/
-├── autodj-stream                     # AutoDJ ffmpeg script
-├── radio-switchd                     # Switch detection daemon
-├── radio-hls-relay                   # HLS relay daemon (Python)
-├── hls-switch                        # Legacy switch hook
-└── radio-ctl                         # Management utility
+├── autodj-stream              # AutoDJ ffmpeg script
+├── radio-switchd              # Switch detection daemon
+├── radio-hls-relay            # HLS relay daemon (Python, copy mode)
+├── hls-switch                 # RTMP hook script
+├── radio-cleanup              # Cleanup script
+└── radio-ctl                  # Management utility
 ```
 
 ---
@@ -310,10 +354,9 @@ server {
 |---------|-------|
 | **RTMP Server** | `rtmp://ingest.peoplewelike.club:1935/live` |
 | **Stream Key** | `likewe` |
-| **Password** | *(none)* |
-| **Full URL** | `rtmp://ingest.peoplewelike.club:1935/live/likewe` |
+| **Password** | *(none required)* |
 
-### Encoder Setup (Blackmagic/OBS)
+### Encoder Setup
 
 **Blackmagic Web Presenter:**
 ```
@@ -338,230 +381,134 @@ Stream Key: likewe
 | **Web Player** | https://radio.peoplewelike.club/ |
 | **HLS Stream** | https://radio.peoplewelike.club/hls/current/index.m3u8 |
 | **Now Playing API** | https://radio.peoplewelike.club/api/nowplaying |
-| **AutoDJ HLS** (internal) | /hls/autodj/index.m3u8 |
-| **Live HLS** (internal) | /hls/live/index.m3u8 |
-| **RTMP Stats** (internal) | http://127.0.0.1:8089/rtmp_stat |
 
 ---
 
 ## 7. Management Commands
 
-### radio-ctl utility
-
 ```bash
-radio-ctl start    # Start all radio services
-radio-ctl stop     # Stop all radio services
-radio-ctl restart  # Restart all radio services
-radio-ctl status   # Show service status + active source
-radio-ctl logs     # Follow live logs from all services
-```
+# Control all services
+radio-ctl start    # Start all
+radio-ctl stop     # Stop all
+radio-ctl restart  # Restart all
+radio-ctl status   # Show status
+radio-ctl logs     # Follow logs
 
-### Individual service management
+# Individual services
+systemctl status autodj-stream radio-switchd radio-hls-relay
 
-```bash
-# AutoDJ
-systemctl start|stop|restart|status autodj-stream
+# View logs
 journalctl -u autodj-stream -f
-
-# Switch daemon
-systemctl start|stop|restart|status radio-switchd
 journalctl -u radio-switchd -f
-
-# HLS relay
-systemctl start|stop|restart|status radio-hls-relay
 journalctl -u radio-hls-relay -f
 
-# Nginx
-systemctl reload nginx
-nginx -t  # Test config
+# Check active source
+cat /run/radio/active
+
+# Check HLS segments
+ls -la /var/www/hls/current/
 ```
 
 ---
 
 ## 8. How Switching Works
 
-### Automatic Detection Flow
+### Live Stream Starts:
+1. Encoder publishes to `rtmp://ingest.../live/likewe`
+2. nginx-rtmp authenticates and accepts stream
+3. nginx-rtmp writes HLS to `/var/www/hls/live/`
+4. `radio-switchd` detects fresh live playlist (< 10 seconds old)
+5. `radio-switchd` writes `live` to `/run/radio/active`
+6. `radio-hls-relay` reads active, switches to live source
+7. `radio-hls-relay` inserts `#EXT-X-DISCONTINUITY`
+8. Player continues seamlessly (no refresh needed)
 
-1. **Live encoder starts streaming** to `rtmp://ingest.../live/likewe`
-2. **nginx-rtmp** authenticates via `/auth` endpoint, accepts stream
-3. **nginx-rtmp** starts writing HLS segments to `/var/www/hls/live/`
-4. **nginx-rtmp** calls `exec_publish` hook → `/usr/local/bin/hls-switch live`
-5. **radio-switchd** detects:
-   - Live HLS playlist exists
-   - Has valid segments
-   - RTMP nclients > 0 OR playlist mtime < 8 seconds
-6. **radio-switchd** writes `live` to `/run/radio/active`
-7. **radio-hls-relay** reads `active`, starts using `/hls/live/` as source
-8. **radio-hls-relay** inserts `#EXT-X-DISCONTINUITY` in playlist
-9. **Player** receives new segments seamlessly (no refresh needed)
-
-### When Live Stops
-
-1. **Encoder disconnects**
-2. **nginx-rtmp** calls `exec_publish_done` → `/usr/local/bin/hls-switch autodj`
-3. **radio-switchd** detects live is no longer healthy
-4. **radio-switchd** writes `autodj` to `/run/radio/active`
-5. **radio-hls-relay** switches back to `/hls/autodj/` source
-6. **Player** continues seamlessly
+### Live Stream Stops:
+1. Encoder disconnects
+2. `/var/www/hls/live/index.m3u8` becomes stale (> 10 seconds)
+3. `radio-switchd` detects, writes `autodj` to `/run/radio/active`
+4. `radio-hls-relay` switches back to autodj source
+5. Player continues seamlessly
 
 ---
 
-## 9. Media Upload Locations
+## 9. Upload Locations
 
 ### Music Files (.mp3)
-
-```bash
-# Default (always plays if scheduled folder empty)
-/var/lib/radio/music/default/
-
-# Scheduled by day and time
-/var/lib/radio/music/monday/morning/    # 06:00-12:00
-/var/lib/radio/music/monday/day/        # 12:00-18:00
-/var/lib/radio/music/monday/night/      # 18:00-06:00
-# ... same for all weekdays
 ```
-
-**Note:** Current autodj-stream uses `/default/` folder only. To enable scheduled playback, modify `/usr/local/bin/autodj-stream` to check day/time and select appropriate folder.
+/var/lib/radio/music/default/
+```
+- Any MP3 format supported
+- Filename format: `Artist - Title.mp3` (for metadata extraction)
+- Files are randomly shuffled
 
 ### Video Loops (.mp4)
-
-```bash
+```
 /var/lib/radio/loops/
 ```
-
-**Requirements:**
 - Resolution: 1920x1080
 - Frame rate: 30fps
 - Codec: H.264
 - Multiple files = random rotation
 
-### Setting Permissions After Upload
-
+### After Upload
 ```bash
 chown -R root:audio /var/lib/radio/music/
 chown -R root:audio /var/lib/radio/loops/
 chmod -R 775 /var/lib/radio/music/
 chmod -R 775 /var/lib/radio/loops/
+systemctl restart autodj-stream
 ```
 
 ---
 
-## 10. Now Playing Metadata
+## 10. Troubleshooting
 
-### File Location
-`/var/www/radio/data/nowplaying.json`
-
-### AutoDJ Format
-```json
-{
-  "title": "Track Title",
-  "artist": "Artist Name",
-  "mode": "autodj"
-}
-```
-
-### Live Format
-```json
-{
-  "title": "LIVE-SHOW",
-  "artist": "Live Broadcast",
-  "mode": "live"
-}
-```
-
-### API Endpoint
-```
-GET https://radio.peoplewelike.club/api/nowplaying
-```
-
----
-
-## 11. Troubleshooting
-
-### Check service status
+### Check Everything
 ```bash
 radio-ctl status
-```
-
-### Check current active source
-```bash
 cat /run/radio/active
-```
-
-### Check HLS segments
-```bash
-ls -la /var/www/hls/autodj/
-ls -la /var/www/hls/live/
 ls -la /var/www/hls/current/
-```
-
-### Check RTMP connections
-```bash
-curl -s http://127.0.0.1:8089/rtmp_stat | grep -A5 '<application>'
-```
-
-### Test local RTMP publish
-```bash
-timeout 10 ffmpeg -re -f lavfi -i testsrc -f lavfi -i sine \
-  -c:v libx264 -c:a aac -f flv rtmp://127.0.0.1:1935/live/likewe
+curl -s https://radio.peoplewelike.club/hls/current/index.m3u8 | head
 ```
 
 ### Common Issues
 
 | Issue | Solution |
 |-------|----------|
-| No HLS segments | Check autodj-stream logs: `journalctl -u autodj-stream` |
-| Live not detected | Check switchd logs: `journalctl -u radio-switchd` |
-| Player stuck loading | Restart relay: `systemctl restart radio-hls-relay` |
-| 404 on stream | Check nginx: `nginx -t && systemctl reload nginx` |
-| Encoder "cache collecting" | Check firewall: `ufw allow 1935/tcp` |
+| Player spinning | Check `radio-hls-relay`: `journalctl -u radio-hls-relay -f` |
+| No segments | Check `autodj-stream`: `journalctl -u autodj-stream -f` |
+| Live not detected | Check playlist age: `stat /var/www/hls/live/index.m3u8` |
+| 404 on HLS | Reload nginx: `nginx -t && systemctl reload nginx` |
+| Encoder "cache" | Check port 1935: `nc -zv 72.60.181.89 1935` |
 
----
-
-## 12. Security Notes
-
-- **Port 1935** is open for RTMP ingest
-- **Stream key** `likewe` provides basic authentication
-- **RTMP stats** endpoint is internal only (127.0.0.1:8089)
-- **SSL** via Let's Encrypt (auto-renewal via certbot.timer)
-- **CORS** headers allow any origin (for embedded players)
-
-### Firewall Rules
+### Restart All
 ```bash
-ufw status
-# Should show:
-# 22/tcp    ALLOW   (SSH)
-# 80/tcp    ALLOW   (HTTP)
-# 443/tcp   ALLOW   (HTTPS)
-# 1935/tcp  ALLOW   (RTMP)
+systemctl restart autodj-stream radio-switchd radio-hls-relay nginx
 ```
 
 ---
 
-## 13. Backup Paths
+## 11. Maintenance
 
-Before making changes, backup:
+### Cleanup Timer
+- Runs every 5 minutes via `radio-cleanup.timer`
+- Removes segments older than 5 minutes
+- Truncates large log files
 
-```bash
-/etc/nginx/rtmp.conf
-/etc/nginx/conf.d/rtmp_stat.conf
-/etc/nginx/conf.d/rtmp_auth.conf
-/etc/nginx/sites-available/radio.peoplewelike.club.conf
-/usr/local/bin/autodj-stream
-/usr/local/bin/radio-switchd
-/usr/local/bin/radio-hls-relay
-/etc/systemd/system/autodj-stream.service
-/etc/systemd/system/radio-switchd.service
-/etc/systemd/system/radio-hls-relay.service
-/var/www/radio.peoplewelike.club/index.html
-```
+### Log Rotation
+- Configured in `/etc/logrotate.d/radio`
+- Daily rotation, 3 days retention
+
+### SSL Certificates
+- Auto-renewed via `certbot.timer`
+- Certificates in `/etc/letsencrypt/live/radio.peoplewelike.club/`
 
 ---
 
-## 14. Coexistence with av.peoplewelike.club
+## 12. Coexistence with av.peoplewelike.club
 
-**DO NOT MODIFY these paths** (Illuminatics Pitch site):
-
+**DO NOT MODIFY** (separate Illuminatics Pitch site):
 ```
 /var/www/av.peoplewelike.club/
 /opt/avpitch/
@@ -569,41 +516,31 @@ Before making changes, backup:
 /usr/local/bin/avpitch-update
 ```
 
-The radio system is completely isolated and does not share any resources with the pitch site.
-
 ---
 
-## 15. Quick Reference Card
+## 13. Quick Reference
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    QUICK REFERENCE                               │
 ├─────────────────────────────────────────────────────────────────┤
+│  STREAM KEY:     likewe                                         │
+│  RTMP SERVER:    rtmp://ingest.peoplewelike.club:1935/live      │
+│  HLS URL:        https://radio.peoplewelike.club/hls/current/   │
+│  PLAYER:         https://radio.peoplewelike.club/               │
 │                                                                  │
-│  MANAGEMENT                                                      │
-│    radio-ctl status         Check all services                  │
-│    radio-ctl restart        Restart all services                │
-│    radio-ctl logs           View live logs                      │
+│  UPLOAD MUSIC:   /var/lib/radio/music/default/                  │
+│  UPLOAD LOOPS:   /var/lib/radio/loops/                          │
 │                                                                  │
-│  STREAM KEY                                                      │
-│    Key: likewe                                                   │
-│    Server: rtmp://ingest.peoplewelike.club:1935/live            │
+│  CHECK STATUS:   radio-ctl status                               │
+│  VIEW LOGS:      radio-ctl logs                                 │
+│  RESTART ALL:    radio-ctl restart                              │
 │                                                                  │
-│  UPLOAD LOCATIONS                                                │
-│    Music: /var/lib/radio/music/default/                         │
-│    Loops: /var/lib/radio/loops/                                 │
-│                                                                  │
-│  URLS                                                            │
-│    Player: https://radio.peoplewelike.club/                     │
-│    HLS: https://radio.peoplewelike.club/hls/current/index.m3u8  │
-│                                                                  │
-│  ACTIVE SOURCE                                                   │
-│    cat /run/radio/active                                        │
-│                                                                  │
+│  ACTIVE SOURCE:  cat /run/radio/active                          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-*Document generated: January 2026*
-*Server: srv1178155 (72.60.181.89)*
+*Document updated: January 2026*
+*Configuration verified working: AutoDJ ✅ | Live ✅ | Switching ✅*
