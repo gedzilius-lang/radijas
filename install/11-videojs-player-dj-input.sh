@@ -75,7 +75,7 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
         :root {
             --bg-dark:#0d0a1a;--bg-card:#1a1329;--purple:#6b46c1;--purple-light:#9f7aea;
             --purple-glow:rgba(107,70,193,0.4);--red-live:#e53e3e;--red-glow:rgba(229,62,62,0.6);
-            --green-ok:#48bb78;--text:#e2e8f0;--text-muted:#a0aec0;--text-dim:#718096;
+            --text:#e2e8f0;--text-muted:#a0aec0;--text-dim:#718096;
             --safe-top:env(safe-area-inset-top,0px);--safe-right:env(safe-area-inset-right,0px);
             --safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);
         }
@@ -97,8 +97,8 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
         .source-strip{display:flex;justify-content:center;gap:clamp(6px,1.5vw,12px);margin-bottom:clamp(8px,2vw,18px)}
         .source-option{display:flex;align-items:center;gap:clamp(4px,1vw,8px);padding:clamp(6px,1.2vw,8px) clamp(12px,2.5vw,20px);border-radius:24px;font-size:clamp(0.65em,1.8vw,0.8em);font-weight:600;text-transform:uppercase;letter-spacing:1px;border:1.5px solid transparent;opacity:.45;transition:all .4s ease;white-space:nowrap}
         .source-option.active{opacity:1}
-        .source-option.autodj{border-color:rgba(107,70,193,.4);background:rgba(107,70,193,.12);color:var(--purple-light)}
-        .source-option.autodj.active{border-color:var(--purple-light);background:rgba(107,70,193,.2);box-shadow:0 0 18px var(--purple-glow)}
+        .source-option.program{border-color:rgba(107,70,193,.4);background:rgba(107,70,193,.12);color:var(--purple-light)}
+        .source-option.program.active{border-color:var(--purple-light);background:rgba(107,70,193,.2);box-shadow:0 0 18px var(--purple-glow)}
         .source-option.live{border-color:rgba(229,62,62,.4);background:rgba(229,62,62,.12);color:var(--red-live)}
         .source-option.live.active{border-color:var(--red-live);background:rgba(229,62,62,.2);box-shadow:0 0 18px var(--red-glow);animation:liveGlow 1.6s ease-in-out infinite}
         .source-dot{width:clamp(6px,1.2vw,8px);height:clamp(6px,1.2vw,8px);border-radius:50%;background:currentColor;flex-shrink:0}
@@ -123,20 +123,6 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
         .np-label{font-size:clamp(0.55em,1.5vw,0.7em);text-transform:uppercase;letter-spacing:clamp(1px,0.3vw,2px);color:var(--text-dim);margin-bottom:2px}
         .np-title{font-size:clamp(0.85em,2.5vw,1.1em);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .np-artist{font-size:clamp(0.75em,2vw,0.9em);color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .controls{padding:clamp(8px,2vw,14px) clamp(12px,3vw,22px);display:flex;gap:clamp(6px,1.5vw,10px);flex-wrap:wrap;justify-content:center;border-top:1px solid rgba(107,70,193,.1)}
-        .btn{padding:clamp(10px,2.2vw,12px) clamp(14px,3vw,20px);border:none;border-radius:clamp(8px,1.5vw,10px);font-size:clamp(0.78em,2vw,0.88em);font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;min-width:44px;touch-action:manipulation;-webkit-user-select:none;user-select:none}
-        .btn-primary{background:linear-gradient(135deg,var(--purple),var(--purple-light));color:#fff}
-        .btn-primary:hover{box-shadow:0 8px 24px var(--purple-glow)}
-        .btn-primary:active{transform:scale(0.96)}
-        body.live-mode .btn-primary{background:linear-gradient(135deg,#c53030,var(--red-live))}
-        body.live-mode .btn-primary:hover{box-shadow:0 8px 24px var(--red-glow)}
-        .btn-secondary{background:rgba(107,70,193,.12);color:var(--purple-light);border:1px solid rgba(107,70,193,.25)}
-        .btn-secondary:hover{background:rgba(107,70,193,.22)}
-        .btn-secondary:active{transform:scale(0.96)}
-        .btn-secondary.active{background:rgba(107,70,193,.28);border-color:var(--purple-light)}
-        .info-bar{padding:clamp(6px,1.5vw,10px) clamp(12px,3vw,22px);display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,.2);font-size:clamp(0.7em,1.8vw,0.82em);color:var(--text-dim)}
-        .source-label{display:flex;align-items:center;gap:6px}
-        .source-label .dot{width:7px;height:7px;border-radius:50%;background:var(--green-ok)}
         footer{text-align:center;padding:clamp(16px,3vw,30px) clamp(8px,2vw,20px);color:var(--text-dim);font-size:clamp(0.7em,1.8vw,0.82em);margin-top:auto}
         footer a{color:var(--purple-light);text-decoration:none}
         .video-js .vjs-big-play-button{background:var(--purple);border:none;border-radius:50%;width:clamp(50px,12vw,76px);height:clamp(50px,12vw,76px);line-height:clamp(50px,12vw,76px);top:50%;left:50%;transform:translate(-50%,-50%);margin:0}
@@ -149,13 +135,13 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
         .video-js .vjs-control{min-width:44px;min-height:44px}
         .video-js .vjs-progress-control{min-height:44px}
         .video-js .vjs-slider{touch-action:none}
-        @media(max-width:374px){.page{padding:4px}header{padding:8px 4px 6px}.source-option{padding:5px 10px;font-size:0.62em;letter-spacing:0.5px}.controls{gap:4px;padding:6px 8px}.btn{padding:10px 12px;font-size:0.75em;flex:1 1 auto}.now-playing{padding:8px 10px;gap:8px}.info-bar{padding:5px 10px}.player-card{border-radius:6px}}
-        @media(min-width:375px) and (max-width:413px){.page{padding:6px}header{padding:10px 8px 8px}.controls{gap:5px;padding:8px 10px}.btn{flex:1 1 auto}}
-        @media(min-width:414px) and (max-width:639px){.page{padding:8px}header{padding:14px 10px 10px}.btn{flex:0 1 auto}}
+        @media(max-width:374px){.page{padding:4px}header{padding:8px 4px 6px}.source-option{padding:5px 10px;font-size:0.62em;letter-spacing:0.5px}.now-playing{padding:8px 10px;gap:8px}.player-card{border-radius:6px}}
+        @media(min-width:375px) and (max-width:413px){.page{padding:6px}header{padding:10px 8px 8px}}
+        @media(min-width:414px) and (max-width:639px){.page{padding:8px}header{padding:14px 10px 10px}}
         @media(min-width:640px) and (max-width:767px){.page{padding:12px}}
         @media(min-width:768px) and (max-width:1023px){.page{padding:16px}}
-        @media(min-width:1024px){.btn-primary:hover{transform:translateY(-2px)}.player-card:hover{box-shadow:0 25px 70px rgba(0,0,0,.6),0 0 40px var(--purple-glow)}}
-        @media(orientation:landscape) and (max-height:500px){header{padding:4px 8px 2px}.logo{font-size:1.1em}.tagline{display:none}.source-strip{margin-bottom:4px;gap:6px}.source-option{padding:3px 10px;font-size:0.65em}.now-playing{padding:6px 10px;gap:8px}.np-icon{width:28px;height:28px;font-size:14px;border-radius:6px}.np-label{display:none}.controls{padding:4px 10px;gap:4px}.btn{padding:6px 12px;min-height:36px;font-size:0.75em}.info-bar{padding:3px 10px;font-size:0.7em}footer{padding:6px;font-size:0.65em}}
+        @media(min-width:1024px){.player-card:hover{box-shadow:0 25px 70px rgba(0,0,0,.6),0 0 40px var(--purple-glow)}}
+        @media(orientation:landscape) and (max-height:500px){header{padding:4px 8px 2px}.logo{font-size:1.1em}.tagline{display:none}.source-strip{margin-bottom:4px;gap:6px}.source-option{padding:3px 10px;font-size:0.65em}.now-playing{padding:6px 10px;gap:8px}.np-icon{width:28px;height:28px;font-size:14px;border-radius:6px}.np-label{display:none}footer{padding:6px;font-size:0.65em}}
         @supports(-webkit-touch-callout:none){body{min-height:-webkit-fill-available}.page{min-height:-webkit-fill-available}}
     </style>
 </head>
@@ -167,8 +153,8 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
             <div class="tagline">Radio</div>
         </header>
         <div class="source-strip">
-            <div class="source-option autodj active" id="src-autodj"><span class="source-dot"></span>Auto DJ</div>
-            <div class="source-option live" id="src-live"><span class="source-dot"></span>Live DJ</div>
+            <div class="source-option program active" id="src-program"><span class="source-dot"></span>Program</div>
+            <div class="source-option live" id="src-live"><span class="source-dot"></span>Live</div>
         </div>
         <div class="player-card" id="player-card">
             <div class="video-area">
@@ -188,15 +174,6 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
                     <div class="np-artist" id="np-artist"></div>
                 </div>
             </div>
-            <div class="controls">
-                <button class="btn btn-primary" id="btn-play">Play</button>
-                <button class="btn btn-secondary" id="btn-mute">Mute</button>
-                <button class="btn btn-secondary" id="btn-fullscreen">Fullscreen</button>
-            </div>
-            <div class="info-bar">
-                <div class="source-label"><span class="dot" id="health-dot"></span><span id="source-text">Source: AutoDJ</span></div>
-                <div id="stream-quality">--</div>
-            </div>
         </div>
         <footer>&copy; 2025 People We Like Radio | <a href="https://peoplewelike.club">peoplewelike.club</a></footer>
     </div>
@@ -204,26 +181,17 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
     <script>
     (function(){
         'use strict';
-        var player=videojs('radio-player',{liveui:true,liveTracker:{trackingThreshold:0,liveTolerance:15},html5:{vhs:{overrideNative:true,smoothQualityChange:true,allowSeeksWithinUnsafeLiveWindow:true,handlePartialData:true,experimentalBufferBasedABR:true},nativeAudioTracks:false,nativeVideoTracks:false},controls:true,autoplay:false,preload:'auto',playsinline:true,errorDisplay:false,responsive:true,fluid:false});
-        var btnPlay=document.getElementById('btn-play'),btnMute=document.getElementById('btn-mute'),btnFullscreen=document.getElementById('btn-fullscreen');
+        var player=videojs('radio-player',{liveui:true,liveTracker:{trackingThreshold:0,liveTolerance:15},html5:{vhs:{overrideNative:true,smoothQualityChange:true,allowSeeksWithinUnsafeLiveWindow:true,handlePartialData:true,experimentalBufferBasedABR:true},nativeAudioTracks:false,nativeVideoTracks:false},controlBar:{playToggle:true,volumePanel:{inline:true},pictureInPictureToggle:true,fullscreenToggle:true,currentTimeDisplay:false,timeDivider:false,durationDisplay:false,remainingTimeDisplay:false},controls:true,autoplay:false,preload:'auto',playsinline:true,errorDisplay:false,responsive:true,fluid:false});
         var npLabel=document.getElementById('np-label'),npTitle=document.getElementById('np-title'),npArtist=document.getElementById('np-artist');
-        var srcAutodj=document.getElementById('src-autodj'),srcLive=document.getElementById('src-live');
+        var srcProgram=document.getElementById('src-program'),srcLive=document.getElementById('src-live');
         var playerCard=document.getElementById('player-card'),switchOverlay=document.getElementById('switch-overlay'),switchText=document.getElementById('switch-text');
-        var sourceText=document.getElementById('source-text'),healthDot=document.getElementById('health-dot'),qualityEl=document.getElementById('stream-quality');
-        btnPlay.addEventListener('click',function(){if(player.paused()){player.play()}else{player.pause()}});
-        player.on('play',function(){btnPlay.textContent='Pause'});
-        player.on('pause',function(){btnPlay.textContent='Play'});
-        btnMute.addEventListener('click',function(){player.muted(!player.muted());btnMute.textContent=player.muted()?'Unmute':'Mute';btnMute.classList.toggle('active',player.muted())});
-        btnFullscreen.addEventListener('click',function(){if(player.isFullscreen()){player.exitFullscreen()}else{player.requestFullscreen()}});
         var currentMode='autodj',switchInProgress=false,errorRecovering=false,POLL_INTERVAL=3000,HLS_URL='/hls/current/index.m3u8';
-        function setMode(mode){var prev=currentMode;currentMode=mode;var isLive=(mode==='live');document.body.classList.toggle('live-mode',isLive);srcAutodj.classList.toggle('active',!isLive);srcLive.classList.toggle('active',isLive);playerCard.classList.toggle('live',isLive);sourceText.textContent=isLive?'Source: Live DJ':'Source: AutoDJ';healthDot.style.background=isLive?'var(--red-live)':'var(--green-ok)';if(prev!==mode&&prev!==null&&!player.paused()){showSwitchOverlay(isLive?'Switching to Live DJ...':'Switching to AutoDJ...')}}
+        function setMode(mode){var prev=currentMode;currentMode=mode;var isLive=(mode==='live');document.body.classList.toggle('live-mode',isLive);srcProgram.classList.toggle('active',!isLive);srcLive.classList.toggle('active',isLive);playerCard.classList.toggle('live',isLive);if(prev!==mode&&prev!==null&&!player.paused()){showSwitchOverlay(isLive?'Switching to Live...':'Switching to Program...')}}
         function showSwitchOverlay(msg){if(switchInProgress)return;switchInProgress=true;switchText.textContent=msg;switchOverlay.classList.add('visible');setTimeout(function(){switchOverlay.classList.remove('visible');switchInProgress=false},3000)}
         function updateNowPlaying(){fetch('/api/nowplaying?'+Date.now()).then(function(r){return r.json()}).then(function(data){var mode=data.mode==='live'?'live':'autodj';setMode(mode);if(mode==='live'){npLabel.textContent='LIVE BROADCAST';npTitle.textContent=data.title||'LIVE SHOW';npArtist.textContent=data.artist||''}else{npLabel.textContent='Now Playing';npTitle.textContent=data.title||'Unknown Track';npArtist.textContent=data.artist||'Unknown Artist'}}).catch(function(){})}
         updateNowPlaying();setInterval(updateNowPlaying,POLL_INTERVAL);
-        player.on('loadedmetadata',updateQuality);player.on('playing',updateQuality);
-        function updateQuality(){var vw=player.videoWidth(),vh=player.videoHeight();if(vw&&vh){qualityEl.textContent=vw+'x'+vh}}
         var ERROR_RETRY_DELAY=3000,MAX_RETRIES=5,retryCount=0;
-        player.on('error',function(){if(errorRecovering)return;errorRecovering=true;var err=player.error();console.warn('[radio] error:',err&&err.message);if(retryCount>=MAX_RETRIES){npTitle.textContent='Stream unavailable - tap Play to retry';errorRecovering=false;retryCount=0;return}retryCount++;setTimeout(function(){player.src({src:HLS_URL,type:'application/x-mpegURL'});player.load();player.play().catch(function(){});errorRecovering=false},ERROR_RETRY_DELAY)});
+        player.on('error',function(){if(errorRecovering)return;errorRecovering=true;var err=player.error();console.warn('[radio] error:',err&&err.message);if(retryCount>=MAX_RETRIES){npTitle.textContent='Stream unavailable - click Play to retry';errorRecovering=false;retryCount=0;return}retryCount++;setTimeout(function(){player.src({src:HLS_URL,type:'application/x-mpegURL'});player.load();player.play().catch(function(){});errorRecovering=false},ERROR_RETRY_DELAY)});
         player.on('playing',function(){retryCount=0});
         player.on('playing',function(){try{var lt=player.liveTracker;if(lt&&lt.isLive()&&lt.behindLiveEdge()){lt.seekToLiveEdge()}}catch(e){}});
         var resizeTimer;function onResize(){clearTimeout(resizeTimer);resizeTimer=setTimeout(function(){player.dimensions(undefined,undefined)},200)}
@@ -289,17 +257,18 @@ echo "=============================================="
 echo ""
 echo "Features:"
 echo "  - Video.js 8 HLS player on /hls/current/index.m3u8"
-echo "  - AutoDJ / Live DJ source strip indicator"
+echo "  - Program / Live source strip indicator"
+echo "  - All playback via Video.js controls (play, stop, volume, PiP, fullscreen)"
 echo "  - Seamless switching via HLS discontinuity tags"
 echo "  - Automatic error recovery (up to 5 retries)"
 echo "  - Live edge seeking after source switch"
 echo "  - Transition overlay animation during switch"
 echo "  - /api/nowplaying polling every 3 seconds"
-echo "  - Full theme shift (purple AutoDJ / red Live DJ)"
+echo "  - Full theme shift (purple Program / red Live)"
 echo "  - Fully responsive: iPhone SE to 4K desktop"
 echo "  - iOS Safari: playsinline, safe-area, audio unlock"
 echo "  - Landscape phone mode: compact UI, larger video"
-echo "  - Touch-friendly: 44px min targets, scale feedback"
+echo "  - Touch-friendly: 44px min targets on control bar"
 echo "  - Fluid typography with clamp() at every breakpoint"
 echo ""
 echo "Player URL: https://radio.peoplewelike.club/"
