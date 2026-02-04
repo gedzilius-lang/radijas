@@ -243,7 +243,7 @@ def write_nowplaying(m)
   filename = m["filename"]
 
   # Create JSON output
-  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
+  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","mode":"autodj","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
 
   # Write to file
   file.write(data=json_data, nowplaying_file)
@@ -263,15 +263,14 @@ radio = metadata.map(write_nowplaying, radio)
 # ============================================
 
 # Output audio to nginx-rtmp autodj_audio application
-output.rtmp(
-  host="127.0.0.1",
-  port=1935,
-  app="autodj_audio",
-  stream="stream",
-  encoder="libfdk_aac",
-  bitrate=128,
-  samplerate=44100,
-  stereo=true,
+# Liquidsoap 2.x: use output.url with %ffmpeg (output.rtmp does not exist)
+output.url(
+  id="rtmp_out",
+  fallible=true,
+  %ffmpeg(format="flv",
+    %audio(codec="aac", b="128k", ar=44100, channels=2)
+  ),
+  "rtmp://127.0.0.1:1935/autodj_audio/stream",
   radio
 )
 LIQEOF
@@ -318,7 +317,7 @@ nowplaying_file = "/var/www/radio/data/nowplaying.json"
 def write_nowplaying(m)
   title = m["title"]
   artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
+  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
   m
@@ -326,16 +325,14 @@ end
 
 radio = metadata.map(write_nowplaying, radio)
 
-# Output to RTMP
-output.rtmp(
-  host="127.0.0.1",
-  port=1935,
-  app="autodj_audio",
-  stream="stream",
-  encoder="libfdk_aac",
-  bitrate=128,
-  samplerate=44100,
-  stereo=true,
+# Output to RTMP (Liquidsoap 2.x)
+output.url(
+  id="rtmp_out",
+  fallible=true,
+  %ffmpeg(format="flv",
+    %audio(codec="aac", b="128k", ar=44100, channels=2)
+  ),
+  "rtmp://127.0.0.1:1935/autodj_audio/stream",
   radio
 )
 LIQSIMPLEEOF
