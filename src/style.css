@@ -186,6 +186,17 @@ body.live-mode .np-icon { background: var(--red); }
     text-overflow: ellipsis;
 }
 
+.np-countdown {
+    font-size: clamp(.8em, 2vw, .95em);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-mid);
+    flex-shrink: 0;
+    min-width: 3em;
+    text-align: right;
+}
+.np-countdown:empty { display: none; }
+
 footer {
     text-align: center;
     padding: clamp(16px, 4vw, 32px) 0;

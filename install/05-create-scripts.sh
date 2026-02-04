@@ -143,10 +143,10 @@ set_active() {
 }
 
 update_nowplaying_live() {
-  # When live, update nowplaying to show LIVE-SHOW
+  # When live, update nowplaying to show LIVE-SHOW (duration:0 = no countdown)
   if [[ -f "$NOWPLAYING_FILE" ]]; then
     cat > "${NOWPLAYING_FILE}.tmp" <<LIVEEOF
-{"title":"LIVE-SHOW","artist":"Live Broadcast","mode":"live","updated":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"title":"LIVE-SHOW","artist":"Live Broadcast","duration":0,"started_at":$(date +%s),"mode":"live","updated":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 LIVEEOF
     mv "${NOWPLAYING_FILE}.tmp" "$NOWPLAYING_FILE"
   fi

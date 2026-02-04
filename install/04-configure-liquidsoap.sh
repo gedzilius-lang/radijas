@@ -241,15 +241,18 @@ def write_nowplaying(m)
   artist = m["artist"]
   album = m["album"]
   filename = m["filename"]
+  dur = m["duration"]
+  dur_val = if dur == "" then "0" else dur end
+  started = string(int_of_float(time()))
 
-  # Create JSON output
-  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","mode":"autodj","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
+  # Create JSON output with duration and started_at for countdown
+  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","duration":#{dur_val},"started_at":#{started},"mode":"autodj","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
 
   # Write to file
   file.write(data=json_data, nowplaying_file)
 
   # Log
-  print("Now playing: #{artist} - #{title}")
+  print("Now playing: #{artist} - #{title} (#{dur_val}s)")
 
   # Return metadata unchanged
   m
@@ -317,9 +320,12 @@ nowplaying_file = "/var/www/radio/data/nowplaying.json"
 def write_nowplaying(m)
   title = m["title"]
   artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
+  dur = m["duration"]
+  dur_val = if dur == "" then "0" else dur end
+  started = string(int_of_float(time()))
+  json_data = '{"title":"#{title}","artist":"#{artist}","duration":#{dur_val},"started_at":#{started},"mode":"autodj","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
   file.write(data=json_data, nowplaying_file)
-  print("Now playing: #{artist} - #{title}")
+  print("Now playing: #{artist} - #{title} (#{dur_val}s)")
   m
 end
 

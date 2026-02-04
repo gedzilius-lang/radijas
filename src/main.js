@@ -49,6 +49,7 @@ var API_URL = BACKEND + '/api/nowplaying';
     var npLabel = document.getElementById('np-label');
     var npTitle = document.getElementById('np-title');
     var npArtist = document.getElementById('np-artist');
+    var npCountdown = document.getElementById('np-countdown');
     var srcProgram = document.getElementById('src-program');
     var srcLive = document.getElementById('src-live');
     var card = document.getElementById('card');
@@ -57,6 +58,7 @@ var API_URL = BACKEND + '/api/nowplaying';
     var currentMode = 'autodj';
     var switching = false;
     var recovering = false;
+    var trackEnd = 0;
 
     function setMode(m) {
         var prev = currentMode;
@@ -82,6 +84,17 @@ var API_URL = BACKEND + '/api/nowplaying';
         }, 3000);
     }
 
+    function updateCountdown() {
+        if (trackEnd <= 0) {
+            npCountdown.textContent = currentMode === 'live' ? '' : '--:--';
+            return;
+        }
+        var remaining = Math.max(0, Math.ceil((trackEnd - Date.now()) / 1000));
+        var min = Math.floor(remaining / 60);
+        var sec = remaining % 60;
+        npCountdown.textContent = min + ':' + (sec < 10 ? '0' : '') + sec;
+    }
+
     function poll() {
         fetch(API_URL + '?' + Date.now())
             .then(function (r) { return r.json(); })
@@ -92,17 +105,31 @@ var API_URL = BACKEND + '/api/nowplaying';
                     npLabel.textContent = 'LIVE';
                     npTitle.textContent = d.title || 'LIVE';
                     npArtist.textContent = d.artist || '';
+                    trackEnd = 0;
                 } else {
                     npLabel.textContent = 'NOW PLAYING';
                     npTitle.textContent = d.title || 'Unknown Track';
                     npArtist.textContent = d.artist || 'Unknown Artist';
+                    var dur = parseFloat(d.duration);
+                    var sta = parseFloat(d.started_at);
+                    if (dur > 0 && sta > 0) {
+                        trackEnd = (sta + dur) * 1000;
+                    } else {
+                        trackEnd = 0;
+                    }
                 }
+                updateCountdown();
             })
             .catch(function () {});
     }
 
     poll();
     setInterval(poll, 3000);
+    setInterval(updateCountdown, 1000);
+
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) { poll(); }
+    });
 
     var retries = 0;
     player.on('error', function () {
