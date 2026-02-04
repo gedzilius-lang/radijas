@@ -50,6 +50,7 @@ var API_URL = BACKEND + '/api/nowplaying';
     var npTitle = document.getElementById('np-title');
     var npArtist = document.getElementById('np-artist');
     var npCountdown = document.getElementById('np-countdown');
+    var listenerCountEl = document.getElementById('listener-count');
     var srcProgram = document.getElementById('src-program');
     var srcLive = document.getElementById('src-live');
     var card = document.getElementById('card');
@@ -60,6 +61,71 @@ var API_URL = BACKEND + '/api/nowplaying';
     var recovering = false;
     var trackEnd = 0;
 
+    // ── Session ID (stable per browser, stored in localStorage) ──
+    var SESSION_ID = '';
+    try {
+        SESSION_ID = localStorage.getItem('radio_sid') || '';
+        if (!SESSION_ID) {
+            SESSION_ID = 'rs_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+            localStorage.setItem('radio_sid', SESSION_ID);
+        }
+    } catch (e) {
+        SESSION_ID = 'rs_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+    }
+
+    // ── Listener heartbeat (only while playing) ──
+    var heartbeatTimer = null;
+
+    function sendHeartbeat() {
+        fetch(BACKEND + '/api/listeners/heartbeat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: SESSION_ID })
+        }).catch(function () {});
+    }
+
+    function startHeartbeat() {
+        if (heartbeatTimer) return;
+        sendHeartbeat();
+        heartbeatTimer = setInterval(sendHeartbeat, 25000);
+    }
+
+    function stopHeartbeat() {
+        if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+        }
+    }
+
+    function fetchListenerCount() {
+        fetch(BACKEND + '/api/listeners/count?' + Date.now())
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.active_unique_listeners !== undefined) {
+                    listenerCountEl.textContent = d.active_unique_listeners;
+                }
+            })
+            .catch(function () {});
+    }
+
+    player.on('playing', function () {
+        startHeartbeat();
+        retries = 0;
+        try {
+            var lt = player.liveTracker;
+            if (lt && lt.isLive() && lt.behindLiveEdge()) {
+                lt.seekToLiveEdge();
+            }
+        } catch (e) {}
+    });
+
+    player.on('pause', stopHeartbeat);
+    player.on('ended', stopHeartbeat);
+
+    fetchListenerCount();
+    setInterval(fetchListenerCount, 15000);
+
+    // ── Mode switching ──
     function setMode(m) {
         var prev = currentMode;
         currentMode = m;
@@ -84,6 +150,7 @@ var API_URL = BACKEND + '/api/nowplaying';
         }, 3000);
     }
 
+    // ── Countdown ──
     function updateCountdown() {
         if (trackEnd <= 0) {
             npCountdown.textContent = currentMode === 'live' ? '' : '--:--';
@@ -95,6 +162,7 @@ var API_URL = BACKEND + '/api/nowplaying';
         npCountdown.textContent = min + ':' + (sec < 10 ? '0' : '') + sec;
     }
 
+    // ── Metadata polling ──
     function poll() {
         fetch(API_URL + '?' + Date.now())
             .then(function (r) { return r.json(); })
@@ -131,6 +199,7 @@ var API_URL = BACKEND + '/api/nowplaying';
         if (!document.hidden) { poll(); }
     });
 
+    // ── Error recovery ──
     var retries = 0;
     player.on('error', function () {
         if (recovering) return;
@@ -150,16 +219,7 @@ var API_URL = BACKEND + '/api/nowplaying';
         }, 3000);
     });
 
-    player.on('playing', function () {
-        retries = 0;
-        try {
-            var lt = player.liveTracker;
-            if (lt && lt.isLive() && lt.behindLiveEdge()) {
-                lt.seekToLiveEdge();
-            }
-        } catch (e) {}
-    });
-
+    // ── Resize handler ──
     var rt;
     function onRz() {
         clearTimeout(rt);
@@ -170,6 +230,7 @@ var API_URL = BACKEND + '/api/nowplaying';
     window.addEventListener('resize', onRz);
     window.addEventListener('orientationchange', onRz);
 
+    // ── iOS audio unlock ──
     var unlocked = false;
     document.addEventListener('touchstart', function u() {
         if (unlocked) return;

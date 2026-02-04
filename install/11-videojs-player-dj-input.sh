@@ -117,6 +117,9 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
         .np-artist{font-size:clamp(.68em,1.6vw,.8em);color:var(--text-mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .np-countdown{font-size:clamp(.8em,2vw,.95em);font-weight:600;font-variant-numeric:tabular-nums;color:var(--text-mid);flex-shrink:0;min-width:3em;text-align:right}
         .np-countdown:empty{display:none}
+        .listeners{display:flex;align-items:center;justify-content:center;gap:6px;padding:clamp(8px,2vw,12px) 0;font-size:clamp(.6em,1.3vw,.7em);color:var(--text-dim);letter-spacing:.5px}
+        .listeners-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);opacity:.6}
+        body.live-mode .listeners-dot{background:var(--red)}
         footer{text-align:center;padding:clamp(16px,4vw,32px) 0;color:var(--text-dim);font-size:clamp(.6em,1.4vw,.7em);margin-top:auto;letter-spacing:.5px}
         footer a{color:var(--accent);text-decoration:none}
         body.live-mode footer a{color:var(--red)}
@@ -160,6 +163,7 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
                 <div class="np-countdown" id="np-countdown"></div>
             </div>
         </div>
+        <div class="listeners" id="listeners"><span class="listeners-dot"></span><span id="listener-count">0</span> listening</div>
         <footer>&copy; 2025 <a href="https://peoplewelike.club">People We Like</a></footer>
     </div>
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
@@ -174,10 +178,19 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
             controls:true,autoplay:false,preload:'auto',playsinline:true,
             errorDisplay:false,responsive:true,fluid:true,aspectRatio:'16:9'
         });
-        var npLabel=document.getElementById('np-label'),npTitle=document.getElementById('np-title'),npArtist=document.getElementById('np-artist'),npCountdown=document.getElementById('np-countdown');
+        var npLabel=document.getElementById('np-label'),npTitle=document.getElementById('np-title'),npArtist=document.getElementById('np-artist'),npCountdown=document.getElementById('np-countdown'),listenerCountEl=document.getElementById('listener-count');
         var srcProgram=document.getElementById('src-program'),srcLive=document.getElementById('src-live');
         var card=document.getElementById('card'),switchOverlay=document.getElementById('switch-overlay'),switchText=document.getElementById('switch-text');
         var currentMode='autodj',switching=false,recovering=false,trackEnd=0,HLS='/hls/current/index.m3u8';
+        var SID='';try{SID=localStorage.getItem('radio_sid')||'';if(!SID){SID='rs_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,9);localStorage.setItem('radio_sid',SID)}}catch(e){SID='rs_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,9)}
+        var hbTimer=null;
+        function sendHB(){fetch('/api/listeners/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:SID})}).catch(function(){})}
+        function startHB(){if(hbTimer)return;sendHB();hbTimer=setInterval(sendHB,25000)}
+        function stopHB(){if(hbTimer){clearInterval(hbTimer);hbTimer=null}}
+        function fetchLC(){fetch('/api/listeners/count?'+Date.now()).then(function(r){return r.json()}).then(function(d){if(d.active_unique_listeners!==undefined)listenerCountEl.textContent=d.active_unique_listeners}).catch(function(){})}
+        player.on('playing',function(){startHB();retries=0;try{var lt=player.liveTracker;if(lt&&lt.isLive()&&lt.behindLiveEdge())lt.seekToLiveEdge()}catch(e){}});
+        player.on('pause',stopHB);player.on('ended',stopHB);
+        fetchLC();setInterval(fetchLC,15000);
         function setMode(m){var prev=currentMode;currentMode=m;var live=m==='live';document.body.classList.toggle('live-mode',live);srcProgram.classList.toggle('active',!live);srcLive.classList.toggle('active',live);card.classList.toggle('live',live);if(prev!==m&&prev!==null&&!player.paused()){showSwitch(live?'Switching to Live...':'Switching to Program...')}}
         function showSwitch(msg){if(switching)return;switching=true;switchText.textContent=msg;switchOverlay.classList.add('visible');setTimeout(function(){switchOverlay.classList.remove('visible');switching=false},3000)}
         function updateCountdown(){if(trackEnd<=0){npCountdown.textContent=currentMode==='live'?'':'--:--';return}var r=Math.max(0,Math.ceil((trackEnd-Date.now())/1000)),min=Math.floor(r/60),sec=r%60;npCountdown.textContent=min+':'+(sec<10?'0':'')+sec}
@@ -186,7 +199,6 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
         document.addEventListener('visibilitychange',function(){if(!document.hidden)poll()});
         var retries=0;
         player.on('error',function(){if(recovering)return;recovering=true;if(retries>=5){npTitle.textContent='Stream unavailable';recovering=false;retries=0;return}retries++;setTimeout(function(){player.src({src:HLS,type:'application/x-mpegURL'});player.load();player.play().catch(function(){});recovering=false},3000)});
-        player.on('playing',function(){retries=0;try{var lt=player.liveTracker;if(lt&&lt.isLive()&&lt.behindLiveEdge()){lt.seekToLiveEdge()}}catch(e){}});
         var rt;function onRz(){clearTimeout(rt);rt=setTimeout(function(){player.dimensions(undefined,undefined)},200)}
         window.addEventListener('resize',onRz);window.addEventListener('orientationchange',onRz);
         var unlocked=false;document.addEventListener('touchstart',function u(){if(unlocked)return;unlocked=true;if(player.paused()){var p=player.play();if(p&&p.catch)p.catch(function(){})}document.removeEventListener('touchstart',u)},{once:true,passive:true});

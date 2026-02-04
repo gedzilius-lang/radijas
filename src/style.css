@@ -197,6 +197,25 @@ body.live-mode .np-icon { background: var(--red); }
 }
 .np-countdown:empty { display: none; }
 
+.listeners {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: clamp(8px, 2vw, 12px) 0;
+    font-size: clamp(.6em, 1.3vw, .7em);
+    color: var(--text-dim);
+    letter-spacing: .5px;
+}
+.listeners-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: .6;
+}
+body.live-mode .listeners-dot { background: var(--red); }
+
 footer {
     text-align: center;
     padding: clamp(16px, 4vw, 32px) 0;
