@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#050505">
+    <title>People We Like Radio</title>
+    <link rel="apple-touch-icon" href="/poster.svg">
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet">
+</head>
+<body>
+    <div class="page">
+        <div class="strip">
+            <div class="pill program active" id="src-program"><span class="dot"></span>Program</div>
+            <div class="pill live" id="src-live"><span class="dot"></span>Live</div>
+        </div>
+        <div class="card" id="card">
+            <div class="video-wrap">
+                <video id="radio-player" class="video-js vjs-big-play-centered" controls preload="auto" playsinline webkit-playsinline poster="/poster.svg">
+                </video>
+                <div class="switch-overlay" id="switch-overlay">
+                    <div class="spin"></div>
+                    <span id="switch-text">Switching...</span>
+                </div>
+            </div>
+            <div class="np">
+                <div class="np-icon" id="np-icon">&#9835;</div>
+                <div class="np-info">
+                    <div class="np-label" id="np-label">Now Playing</div>
+                    <div class="np-title" id="np-title">Connecting...</div>
+                    <div class="np-artist" id="np-artist"></div>
+                </div>
+            </div>
+        </div>
+        <footer>&copy; 2025 <a href="https://peoplewelike.club">People We Like</a></footer>
+    </div>
+    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

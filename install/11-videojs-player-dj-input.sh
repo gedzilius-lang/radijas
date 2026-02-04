@@ -73,8 +73,7 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
     <style>
         :root{
             --black:#050505;--card:#0c0c0c;--border:#1a1a1a;
-            --blue:#2563eb;--blue-dim:rgba(37,99,235,.12);
-            --purple:#7c3aed;--purple-dim:rgba(124,58,237,.10);
+            --accent:#7c3aed;--accent-dim:rgba(124,58,237,.12);--accent-hover:#8b5cf6;
             --red:#ef4444;--red-dim:rgba(239,68,68,.12);--red-glow:rgba(239,68,68,.35);
             --text:#d4d4d4;--text-mid:#737373;--text-dim:#404040;
             --safe-t:env(safe-area-inset-top,0px);--safe-r:env(safe-area-inset-right,0px);
@@ -88,17 +87,12 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
             -webkit-tap-highlight-color:transparent;
             padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
         }
-        .page{max-width:960px;margin:0 auto;padding:clamp(6px,2vw,24px);min-height:100dvh;display:flex;flex-direction:column}
-        header{text-align:center;padding:clamp(14px,4vw,36px) 0 clamp(8px,2vw,14px)}
-        .logo{font-size:clamp(1.2em,4.5vw,1.9em);font-weight:700;letter-spacing:-.03em;color:var(--text)}
-        .logo span{color:var(--blue)}
-        body.live-mode .logo span{color:var(--red)}
-        .tagline{font-size:clamp(.58em,1.6vw,.72em);text-transform:uppercase;letter-spacing:clamp(3px,1vw,8px);color:var(--text-dim);margin-top:3px}
+        .page{max-width:960px;margin:0 auto;padding:clamp(16px,4vw,40px) clamp(6px,2vw,24px) clamp(6px,2vw,24px);min-height:100dvh;display:flex;flex-direction:column}
         .strip{display:flex;justify-content:center;gap:clamp(8px,2vw,14px);margin-bottom:clamp(8px,2vw,16px)}
         .pill{display:flex;align-items:center;gap:5px;padding:clamp(4px,.8vw,6px) clamp(12px,2.5vw,20px);border-radius:16px;font-size:clamp(.6em,1.5vw,.72em);font-weight:600;text-transform:uppercase;letter-spacing:1.5px;border:1px solid transparent;opacity:.3;transition:opacity .3s,border-color .3s,box-shadow .3s}
         .pill.active{opacity:1}
-        .pill.program{border-color:var(--blue);color:var(--blue)}
-        .pill.program.active{background:var(--blue-dim)}
+        .pill.program{border-color:var(--accent);color:var(--accent)}
+        .pill.program.active{background:var(--accent-dim)}
         .pill.live{border-color:rgba(239,68,68,.35);color:var(--red)}
         .pill.live.active{border-color:var(--red);background:var(--red-dim);box-shadow:0 0 20px var(--red-glow);animation:pulse 2s ease-in-out infinite}
         .dot{width:5px;height:5px;border-radius:50%;background:currentColor}
@@ -110,43 +104,39 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
         .video-wrap{background:#000;width:100%;position:relative}
         .switch-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(0,0,0,.88);opacity:0;pointer-events:none;transition:opacity .3s;z-index:20}
         .switch-overlay.visible{opacity:1}
-        .switch-overlay .spin{width:28px;height:28px;border:2px solid rgba(255,255,255,.08);border-top-color:var(--blue);border-radius:50%;animation:rot .6s linear infinite}
+        .switch-overlay .spin{width:28px;height:28px;border:2px solid rgba(255,255,255,.08);border-top-color:var(--accent);border-radius:50%;animation:rot .6s linear infinite}
         body.live-mode .switch-overlay .spin{border-top-color:var(--red)}
         .switch-overlay span{font-size:.75em;color:var(--text-mid);letter-spacing:1px;text-transform:uppercase}
         @keyframes rot{to{transform:rotate(360deg)}}
         .np{padding:clamp(8px,2vw,14px) clamp(10px,2.5vw,18px);display:flex;align-items:center;gap:clamp(8px,2vw,12px);border-top:1px solid var(--border)}
-        .np-icon{width:clamp(32px,7vw,40px);height:clamp(32px,7vw,40px);background:var(--blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:clamp(13px,3vw,16px);flex-shrink:0;color:#fff}
+        .np-icon{width:clamp(32px,7vw,40px);height:clamp(32px,7vw,40px);background:var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:clamp(13px,3vw,16px);flex-shrink:0;color:#fff}
         body.live-mode .np-icon{background:var(--red)}
         .np-info{flex:1;min-width:0;overflow:hidden}
         .np-label{font-size:clamp(.5em,1.2vw,.6em);text-transform:uppercase;letter-spacing:2px;color:var(--text-dim);margin-bottom:1px}
         .np-title{font-size:clamp(.8em,2vw,.95em);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .np-artist{font-size:clamp(.68em,1.6vw,.8em);color:var(--text-mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         footer{text-align:center;padding:clamp(16px,4vw,32px) 0;color:var(--text-dim);font-size:clamp(.6em,1.4vw,.7em);margin-top:auto;letter-spacing:.5px}
-        footer a{color:var(--blue);text-decoration:none}
+        footer a{color:var(--accent);text-decoration:none}
         body.live-mode footer a{color:var(--red)}
         .video-js{width:100%;background:#000}
-        .video-js .vjs-big-play-button{background:var(--blue);border:none;border-radius:50%;width:clamp(44px,10vw,64px);height:clamp(44px,10vw,64px);line-height:clamp(44px,10vw,64px);top:50%;left:50%;transform:translate(-50%,-50%);margin:0;transition:background .2s}
-        .video-js:hover .vjs-big-play-button{background:var(--purple)}
+        .video-js .vjs-big-play-button{background:var(--accent);border:none;border-radius:50%;width:clamp(44px,10vw,64px);height:clamp(44px,10vw,64px);line-height:clamp(44px,10vw,64px);top:50%;left:50%;transform:translate(-50%,-50%);margin:0;transition:background .2s}
+        .video-js:hover .vjs-big-play-button{background:var(--accent-hover)}
         body.live-mode .video-js .vjs-big-play-button{background:var(--red)}
         body.live-mode .video-js:hover .vjs-big-play-button{background:#f87171}
         .video-js .vjs-control-bar{background:rgba(0,0,0,.92);font-size:clamp(10px,2vw,13px)}
-        .video-js .vjs-play-progress,.video-js .vjs-volume-level{background:var(--blue)}
+        .video-js .vjs-play-progress,.video-js .vjs-volume-level{background:var(--accent)}
         body.live-mode .video-js .vjs-play-progress,body.live-mode .video-js .vjs-volume-level{background:var(--red)}
         .video-js .vjs-control{min-width:40px;min-height:40px}
         .video-js .vjs-slider{touch-action:none}
         .video-js .vjs-picture-in-picture-control,.video-js .vjs-fullscreen-control{order:10}
-        @media(max-width:374px){.page{padding:4px}.card{border-radius:3px}.np{padding:6px 8px;gap:6px}.np-icon{width:28px;height:28px;border-radius:4px;font-size:12px}}
-        @media(orientation:landscape) and (max-height:500px){header{padding:2px 0 1px}.logo{font-size:1em}.tagline{display:none}.strip{margin-bottom:3px}.pill{padding:2px 10px;font-size:.58em}.np{padding:4px 8px;gap:6px}.np-icon{width:24px;height:24px;font-size:11px;border-radius:3px}.np-label{display:none}footer{padding:3px;font-size:.55em}}
-        @media(min-width:1024px){.card:hover{box-shadow:0 16px 48px rgba(0,0,0,.7),0 0 1px rgba(37,99,235,.3)}}
+        @media(max-width:374px){.page{padding:8px 4px 4px}.card{border-radius:3px}.np{padding:6px 8px;gap:6px}.np-icon{width:28px;height:28px;border-radius:4px;font-size:12px}}
+        @media(orientation:landscape) and (max-height:500px){.strip{margin-bottom:3px}.pill{padding:2px 10px;font-size:.58em}.np{padding:4px 8px;gap:6px}.np-icon{width:24px;height:24px;font-size:11px;border-radius:3px}.np-label{display:none}footer{padding:3px;font-size:.55em}}
+        @media(min-width:1024px){.card:hover{box-shadow:0 16px 48px rgba(0,0,0,.7),0 0 1px rgba(124,58,237,.3)}}
         @supports(-webkit-touch-callout:none){body{min-height:-webkit-fill-available}}
     </style>
 </head>
 <body>
     <div class="page">
-        <header>
-            <div class="logo">People We <span>Like</span></div>
-            <div class="tagline">Radio</div>
-        </header>
         <div class="strip">
             <div class="pill program active" id="src-program"><span class="dot"></span>Program</div>
             <div class="pill live" id="src-live"><span class="dot"></span>Live</div>
@@ -203,16 +193,16 @@ HTMLEOF
 echo "    Created $WEB_ROOT/index.html"
 
 # ─────────────────────────────────────────────────
-# 2. Create poster image (dark purple theme)
+# 2. Create poster image (dark violet theme)
 # ─────────────────────────────────────────────────
 echo "[2/3] Creating poster image..."
 cat > "$WEB_ROOT/poster.svg" <<'SVGEOF'
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
   <rect width="1920" height="1080" fill="#050505"/>
-  <circle cx="300" cy="900" r="400" fill="#2563eb" opacity="0.03"/>
+  <circle cx="300" cy="900" r="400" fill="#7c3aed" opacity="0.03"/>
   <circle cx="1600" cy="150" r="300" fill="#7c3aed" opacity="0.03"/>
   <text x="960" y="490" text-anchor="middle" font-family="Arial,Helvetica,sans-serif"
-        font-size="68" font-weight="bold" fill="#d4d4d4">People We <tspan fill="#2563eb">Like</tspan></text>
+        font-size="68" font-weight="bold" fill="#d4d4d4">People We <tspan fill="#7c3aed">Like</tspan></text>
   <text x="960" y="570" text-anchor="middle" font-family="Arial,Helvetica,sans-serif"
         font-size="28" fill="#404040" letter-spacing="10">RADIO</text>
 </svg>
@@ -249,7 +239,7 @@ echo "  - Automatic error recovery (5 retries)"
 echo "  - Live edge seeking on source switch"
 echo "  - Transition overlay animation"
 echo "  - /api/nowplaying polling every 3s"
-echo "  - Theme shift: electric blue Program / red Live"
+echo "  - Theme: dark violet Program / red Live"
 echo "  - Underground luxury dark design"
 echo "  - Fully responsive: iPhone SE to 4K"
 echo "  - iOS: playsinline, safe-area, audio unlock"
