@@ -2,7 +2,7 @@
 
 ## What Was Implemented
 
-Three production features were added to the Video.js HLS radio player:
+Six production features were added to the Video.js HLS radio player:
 
 ### 1. Remaining Song Countdown
 - MM:SS countdown in the now-playing metadata bar, ticking every second.
@@ -23,6 +23,36 @@ Three production features were added to the Video.js HLS radio player:
 - Server renders `/share/<id>` with full OG meta tags (og:title, og:image, og:url, twitter:card) and a meta-refresh redirect to the radio homepage.
 - OG image (`/og/<id>.png`, 1200×630) generated from an SVG template using `rsvg-convert`, `convert`, or `ffmpeg` (fallback chain — no Python image libraries required).
 - On mobile: Web Share API (native share sheet). On desktop: copies the share URL to clipboard.
+
+### 4. SFTP Upload + Weekly/Daypart Content Scheduling
+- Dedicated SFTP-only user (`radio_upload`) jailed to `/srv/radio/content`.
+- Directory layout: `<day>/<slot>/` with 7 days x 4 slots (morning, day, evening, night) + `_fallback/`.
+- Liquidsoap `switch()` selects the active playlist based on current weekday + time-of-day.
+- Playlists rescan every 60 seconds — SFTP uploads take effect without restart.
+- Fallback chain: active slot folder → `_fallback/` → silence.
+
+**Night slot midnight-crossing rule:**
+The "night" slot spans 22:00–06:00 and crosses midnight. Each day's night slot owns the hours from that day 22:00 through the *next* day 05:59. Specifically:
+- Monday/night = Monday 22:00–23:59 + Tuesday 00:00–05:59
+- Tuesday/night = Tuesday 22:00–23:59 + Wednesday 00:00–05:59
+- ... (same pattern for all days)
+- Sunday/night = Sunday 22:00–23:59 + Monday 00:00–05:59
+
+In Liquidsoap, this is implemented as: `{(22h-24h and Nw) or (0h-6h and (N+1)w)}` where N is the weekday number (1=Mon..7=Sun, wrapping).
+
+### 5. Weekly Schedule UI
+- 7-column schedule widget on the main page below the player, with today highlighted and current slot shown.
+- Each day links to `/monday.html` ... `/sunday.html` showing all 4 daypart cards.
+- Data driven by `schedule.json` — edit titles, descriptions, DJ names without code changes.
+- Active slot highlighted on day pages based on current time.
+
+### 6. UX Polish
+- Softer color palette (dimmed text, reduced glow, muted borders).
+- Page fade-in animation (`fadeUp` keyframe).
+- Font smoothing (`-webkit-font-smoothing: antialiased`).
+- Smoother transitions on all interactive elements (`.25s ease` timing).
+- Reduced letter-spacing on uppercase labels.
+- Consistent spacing scale via CSS `clamp()`.
 
 ---
 
@@ -60,6 +90,9 @@ Python API server (radio_api.py) on 127.0.0.1:3000
 | `install/11-videojs-player-dj-input.sh` | Modified | VPS inline player updated with all 3 features |
 | `install/14-install-api-server.sh` | **New** | Deploys API server, systemd unit, nginx proxy rules |
 | `install/15-backup-to-github.sh` | **New** | Git backup/push script |
+| `install/16-sftp-upload-user.sh` | **New** | SFTP jailed user + content directories |
+| `public/schedule.json` | **New** | Schedule data (day → slots → title/desc/dj) |
+| `public/monday.html` .. `sunday.html` | **New** | Per-day schedule pages (7 files) |
 
 ---
 
@@ -117,13 +150,15 @@ Python API server (radio_api.py) on 127.0.0.1:3000
 ### VPS (stream server)
 ```bash
 # Run install scripts in order (as root):
-bash install/04-configure-liquidsoap.sh   # updated nowplaying with duration/started_at
+bash install/16-sftp-upload-user.sh        # SFTP user + content directories
+bash install/04-configure-liquidsoap.sh    # 4-slot scheduled playlists
 bash install/05-create-scripts.sh          # updated live nowplaying
-bash install/11-videojs-player-dj-input.sh # updated inline player
-bash install/14-install-api-server.sh      # new API server + nginx proxy
+bash install/11-videojs-player-dj-input.sh # player + schedule pages + UX polish
+bash install/14-install-api-server.sh      # API server + nginx proxy
 
 # Verify:
 systemctl status radio-api
+systemctl status liquidsoap-autodj
 curl -s http://127.0.0.1:3000/api/listeners/count
 ```
 

@@ -291,6 +291,33 @@ var API_URL = BACKEND + '/api/nowplaying';
             });
     });
 
+    // ── Schedule widget ──
+    var scheduleEl = document.getElementById('schedule');
+    if (scheduleEl) {
+        var schedUrl = BACKEND ? BACKEND + '/schedule.json' : '/schedule.json';
+        fetch(schedUrl).then(function (r) { return r.json(); }).then(function (data) {
+            var dayKeys = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+            var dayLabels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+            var now = new Date();
+            var jsDayToIdx = [6,0,1,2,3,4,5]; // JS 0=Sun→6, 1=Mon→0, etc.
+            var todayIdx = jsDayToIdx[now.getDay()];
+            var h = now.getHours();
+            var activeSlot = h >= 6 && h < 10 ? 'morning' : h >= 10 && h < 18 ? 'day' : h >= 18 && h < 22 ? 'evening' : 'night';
+
+            dayKeys.forEach(function (day, i) {
+                var a = document.createElement('a');
+                a.href = '/' + day + '.html';
+                a.className = 'schedule-day' + (i === todayIdx ? ' today' : '');
+                var html = dayLabels[i];
+                if (i === todayIdx && data[day] && data[day][activeSlot]) {
+                    html += '<span class="slot-now">' + activeSlot + '</span>';
+                }
+                a.innerHTML = html;
+                scheduleEl.appendChild(a);
+            });
+        }).catch(function () {});
+    }
+
     // ── iOS audio unlock ──
     var unlocked = false;
     document.addEventListener('touchstart', function u() {
