@@ -117,9 +117,14 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
         .np-artist{font-size:clamp(.68em,1.6vw,.8em);color:var(--text-mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .np-countdown{font-size:clamp(.8em,2vw,.95em);font-weight:600;font-variant-numeric:tabular-nums;color:var(--text-mid);flex-shrink:0;min-width:3em;text-align:right}
         .np-countdown:empty{display:none}
-        .listeners{display:flex;align-items:center;justify-content:center;gap:6px;padding:clamp(8px,2vw,12px) 0;font-size:clamp(.6em,1.3vw,.7em);color:var(--text-dim);letter-spacing:.5px}
+        .below-card{display:flex;align-items:center;justify-content:space-between;padding:clamp(6px,1.5vw,10px) clamp(2px,1vw,8px)}
+        .listeners{display:flex;align-items:center;gap:6px;font-size:clamp(.6em,1.3vw,.7em);color:var(--text-dim);letter-spacing:.5px}
         .listeners-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);opacity:.6}
         body.live-mode .listeners-dot{background:var(--red)}
+        .share-btn{display:inline-flex;align-items:center;gap:5px;padding:clamp(4px,.8vw,6px) clamp(10px,2vw,16px);border:1px solid var(--border);border-radius:14px;background:transparent;color:var(--text-mid);font-size:clamp(.58em,1.2vw,.68em);font-weight:500;cursor:pointer;transition:border-color .2s,color .2s;letter-spacing:.5px}
+        .share-btn:hover{border-color:var(--accent);color:var(--accent)}
+        .share-btn.copied{border-color:var(--accent);color:var(--accent)}
+        body.live-mode .share-btn:hover,body.live-mode .share-btn.copied{border-color:var(--red);color:var(--red)}
         footer{text-align:center;padding:clamp(16px,4vw,32px) 0;color:var(--text-dim);font-size:clamp(.6em,1.4vw,.7em);margin-top:auto;letter-spacing:.5px}
         footer a{color:var(--accent);text-decoration:none}
         body.live-mode footer a{color:var(--red)}
@@ -163,7 +168,10 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
                 <div class="np-countdown" id="np-countdown"></div>
             </div>
         </div>
-        <div class="listeners" id="listeners"><span class="listeners-dot"></span><span id="listener-count">0</span> listening</div>
+        <div class="below-card">
+            <div class="listeners" id="listeners"><span class="listeners-dot"></span><span id="listener-count">0</span> listening</div>
+            <button class="share-btn" id="share-btn" type="button" aria-label="Share to Instagram Story"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg><span id="share-label">Share</span></button>
+        </div>
         <footer>&copy; 2025 <a href="https://peoplewelike.club">People We Like</a></footer>
     </div>
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
@@ -201,6 +209,10 @@ cat > "$WEB_ROOT/index.html" <<'HTMLEOF'
         player.on('error',function(){if(recovering)return;recovering=true;if(retries>=5){npTitle.textContent='Stream unavailable';recovering=false;retries=0;return}retries++;setTimeout(function(){player.src({src:HLS,type:'application/x-mpegURL'});player.load();player.play().catch(function(){});recovering=false},3000)});
         var rt;function onRz(){clearTimeout(rt);rt=setTimeout(function(){player.dimensions(undefined,undefined)},200)}
         window.addEventListener('resize',onRz);window.addEventListener('orientationchange',onRz);
+        var shareBtn=document.getElementById('share-btn'),shareLabel=document.getElementById('share-label');
+        function clipCopy(t){if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(t);var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();document.execCommand('copy');document.body.removeChild(a);return Promise.resolve()}
+        function showCopied(){shareLabel.textContent='Copied';shareBtn.classList.add('copied');setTimeout(function(){shareLabel.textContent='Share';shareBtn.classList.remove('copied')},2000)}
+        shareBtn.addEventListener('click',function(){shareBtn.disabled=true;fetch('/api/share/snapshot',{method:'POST'}).then(function(r){return r.json()}).then(function(d){var url=d.share_url;if(!url)throw 0;var mob=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);if(mob&&navigator.share){navigator.share({title:'People We Like Radio',text:'Listening now',url:url}).catch(function(){clipCopy(url).then(showCopied)})}else{clipCopy(url).then(showCopied)}}).catch(function(){clipCopy(window.location.origin).then(showCopied)}).finally(function(){shareBtn.disabled=false})});
         var unlocked=false;document.addEventListener('touchstart',function u(){if(unlocked)return;unlocked=true;if(player.paused()){var p=player.play();if(p&&p.catch)p.catch(function(){})}document.removeEventListener('touchstart',u)},{once:true,passive:true});
     })();
     </script>

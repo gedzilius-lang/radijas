@@ -197,12 +197,17 @@ body.live-mode .np-icon { background: var(--red); }
 }
 .np-countdown:empty { display: none; }
 
+.below-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: clamp(6px, 1.5vw, 10px) clamp(2px, 1vw, 8px);
+}
+
 .listeners {
     display: flex;
     align-items: center;
-    justify-content: center;
     gap: 6px;
-    padding: clamp(8px, 2vw, 12px) 0;
     font-size: clamp(.6em, 1.3vw, .7em);
     color: var(--text-dim);
     letter-spacing: .5px;
@@ -215,6 +220,26 @@ body.live-mode .np-icon { background: var(--red); }
     opacity: .6;
 }
 body.live-mode .listeners-dot { background: var(--red); }
+
+.share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: clamp(4px, .8vw, 6px) clamp(10px, 2vw, 16px);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: transparent;
+    color: var(--text-mid);
+    font-size: clamp(.58em, 1.2vw, .68em);
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color .2s, color .2s;
+    letter-spacing: .5px;
+}
+.share-btn:hover { border-color: var(--accent); color: var(--accent); }
+.share-btn.copied { border-color: var(--accent); color: var(--accent); }
+body.live-mode .share-btn:hover,
+body.live-mode .share-btn.copied { border-color: var(--red); color: var(--red); }
 
 footer {
     text-align: center;

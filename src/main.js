@@ -230,6 +230,67 @@ var API_URL = BACKEND + '/api/nowplaying';
     window.addEventListener('resize', onRz);
     window.addEventListener('orientationchange', onRz);
 
+    // ── Share button ──
+    var shareBtn = document.getElementById('share-btn');
+    var shareLabel = document.getElementById('share-label');
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        // fallback
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        return Promise.resolve();
+    }
+
+    function showCopied() {
+        shareLabel.textContent = 'Copied';
+        shareBtn.classList.add('copied');
+        setTimeout(function () {
+            shareLabel.textContent = 'Share';
+            shareBtn.classList.remove('copied');
+        }, 2000);
+    }
+
+    shareBtn.addEventListener('click', function () {
+        shareBtn.disabled = true;
+        fetch(BACKEND + '/api/share/snapshot', { method: 'POST' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var url = d.share_url;
+                if (!url) throw new Error('no url');
+
+                // Mobile: try Instagram story deep-link, then Web Share API, then copy
+                var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                if (isMobile && navigator.share) {
+                    navigator.share({
+                        title: 'People We Like Radio',
+                        text: 'Listening now',
+                        url: url
+                    }).catch(function () {
+                        copyToClipboard(url).then(showCopied);
+                    });
+                } else {
+                    copyToClipboard(url).then(showCopied);
+                }
+            })
+            .catch(function () {
+                // If snapshot fails, share the base URL
+                var fallback = BACKEND || window.location.origin;
+                copyToClipboard(fallback).then(showCopied);
+            })
+            .finally(function () {
+                shareBtn.disabled = false;
+            });
+    });
+
     // ── iOS audio unlock ──
     var unlocked = false;
     document.addEventListener('touchstart', function u() {
