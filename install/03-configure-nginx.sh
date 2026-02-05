@@ -184,11 +184,20 @@ server {
         }
     }
 
-    # API proxy to radio-api service
+    # Now playing metadata (served directly from file)
+    location = /api/nowplaying {
+        alias /var/www/radio/data/nowplaying.json;
+        default_type application/json;
+        add_header Cache-Control "no-cache, no-store";
+        add_header Access-Control-Allow-Origin *;
+    }
+
+    # API proxy to radio-api service (listeners, share, etc.)
     location /api/ {
-        proxy_pass http://127.0.0.1:5000/;
+        proxy_pass http://127.0.0.1:3000/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
+        add_header Access-Control-Allow-Origin *;
     }
 
     # Static files

@@ -235,7 +235,7 @@ def write_nowplaying(m)
   dur_val = if dur == "" then "0" else dur end
   started = string(int_of_float(time()))
 
-  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","duration":#{dur_val},"started_at":#{started},"mode":"autodj","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
+  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","duration":#{dur_val},"started_at":#{started},"mode":"program","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
 
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title} (#{dur_val}s)")
@@ -288,7 +288,7 @@ def write_nowplaying(m)
   dur = m["duration"]
   dur_val = if dur == "" then "0" else dur end
   started = string(int_of_float(time()))
-  json_data = '{"title":"#{title}","artist":"#{artist}","duration":#{dur_val},"started_at":#{started},"mode":"autodj","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
+  json_data = '{"title":"#{title}","artist":"#{artist}","duration":#{dur_val},"started_at":#{started},"mode":"program","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title} (#{dur_val}s)")
   m
@@ -316,7 +316,7 @@ chmod 644 /etc/liquidsoap/*.liq
 # Create initial nowplaying.json
 mkdir -p /var/www/radio/data
 cat > /var/www/radio/data/nowplaying.json <<'NPEOF'
-{"title":"Starting...","artist":"AutoDJ","mode":"autodj","updated":""}
+{"title":"Starting...","artist":"","mode":"program","updated":""}
 NPEOF
 chown www-data:www-data /var/www/radio/data/nowplaying.json
 chmod 644 /var/www/radio/data/nowplaying.json

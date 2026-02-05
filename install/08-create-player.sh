@@ -248,7 +248,7 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
                     <div class="np-title" id="np-title">Ready to play</div>
                     <div class="np-artist" id="np-artist"></div>
                 </div>
-                <div class="np-status" id="np-status">AutoDJ</div>
+                <div class="np-status" id="np-status">Program</div>
             </div>
         </div>
     </div>
@@ -304,28 +304,40 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
                     npStatus.className = 'np-status live';
                 } else {
                     npLabel.textContent = 'Now Playing';
-                    npStatus.textContent = 'AutoDJ';
+                    npStatus.textContent = 'Program';
                     npStatus.className = 'np-status';
 
-                    // Use metadata if available, otherwise parse filename
+                    // Try sources in order: metadata, filename parsing
                     let title = data.title;
                     let artist = data.artist;
 
-                    if ((!title || title === 'Unknown') && data.filename) {
+                    // If no proper metadata, try parsing filename
+                    if ((!title || title === 'Unknown' || title === '') && data.filename) {
                         const parsed = parseFilename(data.filename);
                         title = parsed.title;
                         artist = parsed.artist;
                     }
 
-                    npTitle.textContent = title || 'Unknown Track';
-                    npArtist.textContent = artist || '';
+                    // Display artist - title format
+                    if (artist && title) {
+                        npArtist.textContent = artist;
+                        npTitle.textContent = title;
+                    } else if (title) {
+                        npTitle.textContent = title;
+                        npArtist.textContent = '';
+                    } else {
+                        npTitle.textContent = 'Unknown Track';
+                        npArtist.textContent = '';
+                    }
                 }
             } catch (e) {
-                // API unavailable
-                npLabel.textContent = 'Now Playing';
-                npTitle.textContent = 'Streaming';
-                npArtist.textContent = '';
-                npStatus.textContent = 'AutoDJ';
+                // API unavailable - keep last known state or show default
+                if (npTitle.textContent === 'Ready to play') {
+                    npLabel.textContent = 'Now Playing';
+                    npTitle.textContent = 'Connecting...';
+                    npArtist.textContent = '';
+                }
+                npStatus.textContent = 'Program';
                 npStatus.className = 'np-status';
             }
         }
