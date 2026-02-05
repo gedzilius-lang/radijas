@@ -36,15 +36,6 @@ cat > /etc/liquidsoap/radio.liq <<'LIQEOF'
 # Fallback: if active slot is empty → /srv/radio/content/_fallback/
 
 # ============================================
-# SETTINGS
-# ============================================
-
-settings.server.telnet := true
-settings.server.telnet.port := 1234
-settings.log.file.path := "/var/log/liquidsoap/radio.log"
-settings.log.level := 3
-
-# ============================================
 # CONTENT ROOT
 # ============================================
 
@@ -276,11 +267,6 @@ cat > /etc/liquidsoap/radio-simple.liq <<'LIQSIMPLEEOF'
 #!/usr/bin/liquidsoap
 # People We Like Radio - Simplified AutoDJ Configuration
 # Use this if the main config has issues
-
-settings.server.telnet := true
-settings.server.telnet.port := 1234
-settings.log.file.path := "/var/log/liquidsoap/radio.log"
-settings.log.level := 3
 
 # Scan all content directories
 all_music = playlist(
