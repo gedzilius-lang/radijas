@@ -19,47 +19,56 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>People We Like Radio</title>
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #0d0d14;
             min-height: 100vh;
+            min-height: 100dvh;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             color: #fff;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         }
 
         .player-wrap {
             width: 100%;
-            max-width: 960px;
-            padding: 20px;
+            max-width: 1200px;
+            padding: clamp(10px, 3vw, 30px);
         }
 
         h1 {
             text-align: center;
-            font-size: 1.5em;
+            font-size: clamp(1.1em, 4vw, 1.8em);
             font-weight: 400;
-            margin-bottom: 20px;
+            margin-bottom: clamp(12px, 3vw, 24px);
             color: #a78bfa;
         }
 
         .video-container {
             position: relative;
             background: #1a1a24;
-            border-radius: 12px;
+            border-radius: clamp(8px, 2vw, 16px);
             overflow: hidden;
             box-shadow: 0 0 60px rgba(167, 139, 250, 0.15);
         }
 
         .video-js {
             width: 100%;
+            height: auto;
             aspect-ratio: 16/9;
         }
 
@@ -68,18 +77,21 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
             background: rgba(167, 139, 250, 0.9);
             border: none;
             border-radius: 50%;
-            width: 80px;
-            height: 80px;
-            line-height: 80px;
+            width: clamp(50px, 12vw, 80px);
+            height: clamp(50px, 12vw, 80px);
+            line-height: clamp(50px, 12vw, 80px);
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
+            font-size: clamp(1.5em, 4vw, 2em);
         }
-        .video-js .vjs-big-play-button:hover {
+        .video-js .vjs-big-play-button:hover,
+        .video-js .vjs-big-play-button:focus {
             background: #a78bfa;
         }
         .video-js .vjs-control-bar {
-            background: rgba(13, 13, 20, 0.9);
+            background: rgba(13, 13, 20, 0.95);
+            height: clamp(35px, 8vw, 45px);
         }
         .video-js .vjs-play-progress,
         .video-js .vjs-volume-level {
@@ -88,25 +100,75 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
         .video-js .vjs-slider {
             background: rgba(167, 139, 250, 0.3);
         }
+        .video-js .vjs-time-control {
+            font-size: clamp(0.7em, 2vw, 1em);
+            padding: 0 0.5em;
+            min-width: auto;
+        }
 
         .now-playing {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 16px 20px;
+            gap: clamp(8px, 2vw, 16px);
+            padding: clamp(12px, 3vw, 20px);
             background: #13131a;
             border-top: 1px solid #252530;
         }
 
+        .np-icon {
+            width: clamp(36px, 8vw, 48px);
+            height: clamp(36px, 8vw, 48px);
+            background: linear-gradient(135deg, #7c3aed, #a78bfa);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(1em, 3vw, 1.4em);
+            flex-shrink: 0;
+        }
+
+        .np-info {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .np-label {
+            font-size: clamp(0.65em, 1.8vw, 0.75em);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #6b7280;
+        }
+
+        .np-title {
+            font-size: clamp(0.9em, 2.5vw, 1.1em);
+            font-weight: 500;
+            color: #fff;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .np-artist {
+            font-size: clamp(0.8em, 2vw, 0.95em);
+            color: #9ca3af;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .np-status {
-            padding: 4px 10px;
+            padding: clamp(4px, 1vw, 6px) clamp(8px, 2vw, 12px);
             border-radius: 4px;
-            font-size: 0.7em;
+            font-size: clamp(0.6em, 1.5vw, 0.7em);
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 1px;
             background: #7c3aed;
             flex-shrink: 0;
+            align-self: flex-start;
         }
         .np-status.live {
             background: #dc2626;
@@ -117,25 +179,52 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
             50% { opacity: 0.6; }
         }
 
-        .np-text {
-            flex: 1;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            font-size: 0.9em;
-            color: #9ca3af;
-        }
-        .np-text strong {
-            color: #fff;
-            font-weight: 500;
+        /* Tablet */
+        @media (max-width: 768px) {
+            .now-playing {
+                flex-wrap: wrap;
+            }
+            .np-status {
+                order: -1;
+                margin-bottom: 4px;
+            }
         }
 
-        @media (max-width: 600px) {
-            .player-wrap { padding: 10px; }
-            h1 { font-size: 1.2em; }
-            .now-playing { flex-direction: column; text-align: center; gap: 8px; }
-            .np-text { white-space: normal; }
+        /* Mobile */
+        @media (max-width: 480px) {
+            body {
+                justify-content: flex-start;
+                padding-top: clamp(20px, 5vh, 60px);
+            }
+            .now-playing {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .np-icon {
+                display: none;
+            }
+            .np-info {
+                width: 100%;
+            }
+            .np-title, .np-artist {
+                white-space: normal;
+                word-break: break-word;
+            }
+        }
+
+        /* Landscape mobile */
+        @media (max-height: 500px) and (orientation: landscape) {
+            body {
+                justify-content: center;
+            }
+            h1 {
+                margin-bottom: 8px;
+                font-size: 1em;
+            }
+            .player-wrap {
+                max-width: 90vh;
+            }
         }
     </style>
 </head>
@@ -147,13 +236,19 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
                 id="player"
                 class="video-js vjs-big-play-centered"
                 controls
+                playsinline
                 preload="auto"
                 poster="/poster.jpg">
                 <source src="/hls/current/index.m3u8" type="application/x-mpegURL">
             </video>
             <div class="now-playing">
-                <div class="np-status" id="status">AutoDJ</div>
-                <div class="np-text" id="track">Ready to play</div>
+                <div class="np-icon">&#9835;</div>
+                <div class="np-info">
+                    <div class="np-label" id="np-label">Now Playing</div>
+                    <div class="np-title" id="np-title">Ready to play</div>
+                    <div class="np-artist" id="np-artist"></div>
+                </div>
+                <div class="np-status" id="np-status">AutoDJ</div>
             </div>
         </div>
     </div>
@@ -162,6 +257,8 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
     <script>
         const player = videojs('player', {
             liveui: true,
+            fluid: true,
+            responsive: true,
             html5: {
                 vhs: {
                     overrideNative: true,
@@ -172,8 +269,26 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
             }
         });
 
-        const statusEl = document.getElementById('status');
-        const trackEl = document.getElementById('track');
+        const npLabel = document.getElementById('np-label');
+        const npTitle = document.getElementById('np-title');
+        const npArtist = document.getElementById('np-artist');
+        const npStatus = document.getElementById('np-status');
+
+        function parseFilename(filename) {
+            // Remove extension and path
+            let name = filename.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
+            // Try to split "Artist - Title" format
+            const parts = name.split(' - ');
+            if (parts.length >= 2) {
+                return { artist: parts[0].trim(), title: parts.slice(1).join(' - ').trim() };
+            }
+            // Try underscore format "Artist_-_Title"
+            const uparts = name.split('_-_');
+            if (uparts.length >= 2) {
+                return { artist: uparts[0].replace(/_/g, ' ').trim(), title: uparts.slice(1).join(' - ').replace(/_/g, ' ').trim() };
+            }
+            return { artist: '', title: name.replace(/_/g, ' ') };
+        }
 
         async function updateNowPlaying() {
             try {
@@ -182,21 +297,36 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
                 const data = await res.json();
 
                 if (data.mode === 'live') {
-                    statusEl.textContent = 'LIVE';
-                    statusEl.className = 'np-status live';
-                    trackEl.innerHTML = data.title || 'Live Broadcast';
+                    npLabel.textContent = 'LIVE BROADCAST';
+                    npTitle.textContent = data.title || 'Live Show';
+                    npArtist.textContent = data.artist || '';
+                    npStatus.textContent = 'LIVE';
+                    npStatus.className = 'np-status live';
                 } else {
-                    statusEl.textContent = 'AutoDJ';
-                    statusEl.className = 'np-status';
-                    const title = data.title || 'Unknown';
-                    const artist = data.artist || '';
-                    trackEl.innerHTML = artist ? `<strong>${title}</strong> - ${artist}` : `<strong>${title}</strong>`;
+                    npLabel.textContent = 'Now Playing';
+                    npStatus.textContent = 'AutoDJ';
+                    npStatus.className = 'np-status';
+
+                    // Use metadata if available, otherwise parse filename
+                    let title = data.title;
+                    let artist = data.artist;
+
+                    if ((!title || title === 'Unknown') && data.filename) {
+                        const parsed = parseFilename(data.filename);
+                        title = parsed.title;
+                        artist = parsed.artist;
+                    }
+
+                    npTitle.textContent = title || 'Unknown Track';
+                    npArtist.textContent = artist || '';
                 }
             } catch (e) {
-                // API unavailable - show default state
-                statusEl.textContent = 'AutoDJ';
-                statusEl.className = 'np-status';
-                trackEl.innerHTML = '<strong>Streaming</strong>';
+                // API unavailable
+                npLabel.textContent = 'Now Playing';
+                npTitle.textContent = 'Streaming';
+                npArtist.textContent = '';
+                npStatus.textContent = 'AutoDJ';
+                npStatus.className = 'np-status';
             }
         }
 
