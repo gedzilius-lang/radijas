@@ -136,16 +136,26 @@ server {
 AUTHEOF
 echo "    Created /etc/nginx/conf.d/rtmp_auth.conf"
 
+# Create ACME challenge directory
+mkdir -p /var/www/letsencrypt/.well-known/acme-challenge
+chown -R www-data:www-data /var/www/letsencrypt
+
 # Create radio website virtual host
 echo "[5/7] Creating radio.peoplewelike.club virtual host..."
 cat > /etc/nginx/sites-available/radio.peoplewelike.club.conf <<'RADIOEOF'
 # Radio website and HLS streaming
 server {
     listen 80;
+    listen [::]:80;
     server_name radio.peoplewelike.club stream.peoplewelike.club;
 
     root /var/www/radio.peoplewelike.club;
     index index.html;
+
+    # ACME challenge for Certbot
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
 
     # HLS streaming location
     location /hls {
@@ -191,11 +201,35 @@ server {
     error_page 404 /404.html;
     error_page 500 502 503 504 /50x.html;
 }
+
+# Ingest domain for RTMP endpoint (Certbot needs a matching server block)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ingest.peoplewelike.club;
+
+    # ACME challenge for Certbot
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    # Info page for ingest domain
+    location / {
+        return 200 'RTMP Ingest: rtmp://ingest.peoplewelike.club:1935/live\n';
+        add_header Content-Type text/plain;
+    }
+}
 RADIOEOF
 echo "    Created /etc/nginx/sites-available/radio.peoplewelike.club.conf"
 
 # Enable radio site
 ln -sf /etc/nginx/sites-available/radio.peoplewelike.club.conf /etc/nginx/sites-enabled/
+
+# Disable default site to avoid port 80 conflicts
+if [[ -f /etc/nginx/sites-enabled/default ]]; then
+    rm -f /etc/nginx/sites-enabled/default
+    echo "    Disabled default site to avoid port 80 conflicts"
+fi
 
 # Include RTMP config in main nginx.conf if not already included
 echo "[6/7] Updating main nginx.conf..."
