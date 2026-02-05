@@ -3,6 +3,7 @@
 # CONFIGURE LIQUIDSOAP
 # People We Like Radio Installation - Step 4
 #
+# Liquidsoap 2.2.x compatible - outputs HLS directly
 # 4 dayparts per day: morning (06–10), day (10–18), evening (18–22), night (22–06)
 # Night slot crosses midnight: e.g. Monday/night = Mon 22:00 – Tue 06:00
 # Content root: /srv/radio/content/<day>/<slot>/
@@ -18,34 +19,31 @@ echo "=============================================="
 echo "[1/2] Creating Liquidsoap configuration..."
 cat > /etc/liquidsoap/radio.liq <<'LIQEOF'
 #!/usr/bin/liquidsoap
-# People We Like Radio - Scheduled AutoDJ Configuration
-# Liquidsoap 2.x compatible
+# People We Like Radio - Program (AutoDJ) Configuration
+# Liquidsoap 2.2.x compatible
+#
+# This outputs HLS to /var/www/hls/autodj/
+# Live streaming is handled separately by nginx-rtmp
 #
 # Schedule (server local time):
 #   morning:  06:00 – 10:00
 #   day:      10:00 – 18:00
 #   evening:  18:00 – 22:00
 #   night:    22:00 – 06:00 (crosses midnight)
-#
-# Night crossing rule:
-#   Monday/night   = Mon 22:00–23:59 + Tue 00:00–05:59
-#   Tuesday/night  = Tue 22:00–23:59 + Wed 00:00–05:59
-#   ...
-#   Sunday/night   = Sun 22:00–23:59 + Mon 00:00–05:59
-#
-# Fallback: if active slot is empty → /srv/radio/content/_fallback/
+
+settings.log.level.set(3)
 
 # ============================================
 # CONTENT ROOT
 # ============================================
 
 root = "/srv/radio/content"
+nowplaying_file = "/var/www/radio.peoplewelike.club/data/nowplaying.json"
 
 # ============================================
 # PLAYLIST HELPER
 # ============================================
 
-# reload=60 rescans folder every 60s (picks up SFTP uploads without restart)
 def make_playlist(folder)
   playlist(
     mode="randomize",
@@ -109,12 +107,7 @@ emergency = blank(id="emergency")
 # ============================================
 # SCHEDULE SWITCHING
 # ============================================
-# Liquidsoap weekdays: 1w=Monday .. 7w=Sunday
-#
-# Night crossing: Monday/night plays Mon 22h–24h AND Tue 0h–6h
-# This means Tue 0h–6h uses Monday/night content (previous day's night slot).
 
-# Monday (morning/day/evening on 1w, night spans 1w 22h + 2w 0h-6h)
 monday = switch(
   track_sensitive=false,
   [
@@ -125,7 +118,6 @@ monday = switch(
   ]
 )
 
-# Tuesday
 tuesday = switch(
   track_sensitive=false,
   [
@@ -136,7 +128,6 @@ tuesday = switch(
   ]
 )
 
-# Wednesday
 wednesday = switch(
   track_sensitive=false,
   [
@@ -147,7 +138,6 @@ wednesday = switch(
   ]
 )
 
-# Thursday
 thursday = switch(
   track_sensitive=false,
   [
@@ -158,7 +148,6 @@ thursday = switch(
   ]
 )
 
-# Friday
 friday = switch(
   track_sensitive=false,
   [
@@ -169,7 +158,6 @@ friday = switch(
   ]
 )
 
-# Saturday
 saturday = switch(
   track_sensitive=false,
   [
@@ -180,7 +168,6 @@ saturday = switch(
   ]
 )
 
-# Sunday (night wraps to Monday 0h-6h)
 sunday = switch(
   track_sensitive=false,
   [
@@ -211,6 +198,7 @@ scheduled = fallback(
 # AUDIO PROCESSING
 # ============================================
 
+# Audio processing with crossfade
 radio = crossfade(
   duration=3.0,
   fade_in=1.5,
@@ -220,11 +208,12 @@ radio = crossfade(
 
 radio = normalize(radio)
 
+# Make source infallible (adds silence if no content available)
+radio = mksafe(radio)
+
 # ============================================
 # METADATA HANDLING
 # ============================================
-
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
 
 def write_nowplaying(m)
   title = m["title"]
@@ -235,100 +224,58 @@ def write_nowplaying(m)
   dur_val = if dur == "" then "0" else dur end
   started = "#{int_of_float(time())}"
 
-  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","duration":#{dur_val},"started_at":#{started},"mode":"program","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
+  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","duration":#{dur_val},"started_at":#{started},"mode":"program"}'
 
-  file.write(data=json_data, nowplaying_file)
-  print("Now playing: #{artist} - #{title} (#{dur_val}s)")
-  m
+  ignore(file.write(data=json_data, nowplaying_file))
+  print("Now playing: #{artist} - #{title}")
+  ()
 end
 
-radio = metadata.map(write_nowplaying, radio)
+radio.on_track(write_nowplaying)
 
 # ============================================
-# OUTPUT TO RTMP
+# HLS OUTPUT
 # ============================================
 
-output.url(
-  id="rtmp_out",
-  fallible=true,
-  %ffmpeg(format="flv",
-    %audio(codec="aac", b="128k", ar=44100, channels=2)
-  ),
-  "rtmp://127.0.0.1:1935/autodj_audio/stream",
+output.file.hls(
+  id="hls_autodj",
+  playlist="index.m3u8",
+  segment_duration=6.0,
+  segments=20,
+  segments_overhead=5,
+  "/var/www/hls/autodj",
+  [
+    ("aac128",
+      %ffmpeg(
+        format="mpegts",
+        %audio(codec="aac", b="128k", ar=44100, channels=2)
+      )
+    )
+  ],
   radio
 )
 LIQEOF
 
 echo "    Created /etc/liquidsoap/radio.liq"
 
-# Create a simpler fallback config if the main one has issues
-echo "[2/2] Creating fallback Liquidsoap configuration..."
-cat > /etc/liquidsoap/radio-simple.liq <<'LIQSIMPLEEOF'
-#!/usr/bin/liquidsoap
-# People We Like Radio - Simplified AutoDJ Configuration
-# Use this if the main config has issues
-
-# Scan all content directories
-all_music = playlist(
-  mode="randomize",
-  reload=60,
-  "/srv/radio/content"
-)
-
-emergency = blank(id="emergency")
-radio = fallback(track_sensitive=false, [all_music, emergency])
-radio = crossfade(duration=3.0, radio)
-radio = normalize(radio)
-
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
-
-def write_nowplaying(m)
-  title = m["title"]
-  artist = m["artist"]
-  dur = m["duration"]
-  dur_val = if dur == "" then "0" else dur end
-  started = "#{int_of_float(time())}"
-  json_data = '{"title":"#{title}","artist":"#{artist}","duration":#{dur_val},"started_at":#{started},"mode":"program","updated":"#{time.string(format="%Y-%m-%dT%H:%M:%SZ")}"}'
-  file.write(data=json_data, nowplaying_file)
-  print("Now playing: #{artist} - #{title} (#{dur_val}s)")
-  m
-end
-
-radio = metadata.map(write_nowplaying, radio)
-
-output.url(
-  id="rtmp_out",
-  fallible=true,
-  %ffmpeg(format="flv",
-    %audio(codec="aac", b="128k", ar=44100, channels=2)
-  ),
-  "rtmp://127.0.0.1:1935/autodj_audio/stream",
-  radio
-)
-LIQSIMPLEEOF
-
-echo "    Created /etc/liquidsoap/radio-simple.liq (fallback)"
-
 # Set permissions
 chown -R liquidsoap:audio /etc/liquidsoap
 chmod 644 /etc/liquidsoap/*.liq
 
-# Create initial nowplaying.json
-mkdir -p /var/www/radio/data
-cat > /var/www/radio/data/nowplaying.json <<'NPEOF'
+# Create data directory and initial nowplaying.json
+mkdir -p /var/www/radio.peoplewelike.club/data
+cat > /var/www/radio.peoplewelike.club/data/nowplaying.json <<'NPEOF'
 {"title":"Starting...","artist":"","mode":"program","updated":""}
 NPEOF
-chown www-data:www-data /var/www/radio/data/nowplaying.json
-chmod 644 /var/www/radio/data/nowplaying.json
+chown www-data:www-data /var/www/radio.peoplewelike.club/data/nowplaying.json
+chmod 644 /var/www/radio.peoplewelike.club/data/nowplaying.json
 
 echo ""
 echo "=============================================="
 echo "  Liquidsoap Configuration Complete"
 echo "=============================================="
 echo ""
-echo "Configuration files:"
-echo "  - /etc/liquidsoap/radio.liq (main - schedule-based)"
-echo "  - /etc/liquidsoap/radio-simple.liq (fallback - all music)"
+echo "Configuration file: /etc/liquidsoap/radio.liq"
 echo ""
 echo "Schedule (server local time):"
 echo "  morning:  06:00 – 10:00"
@@ -338,6 +285,8 @@ echo "  night:    22:00 – 06:00 (crosses midnight)"
 echo ""
 echo "Content root: /srv/radio/content/<day>/<slot>/"
 echo "Fallback:     /srv/radio/content/_fallback/"
+echo ""
+echo "HLS output:   /var/www/hls/autodj/"
 echo ""
 echo "Playlists rescan every 60 seconds (no restart needed for new uploads)."
 echo ""
