@@ -15,22 +15,21 @@ echo "=============================================="
 echo "[1/7] Running pre-flight checks..."
 
 # Check if loop video exists
-if [[ ! -f /var/lib/radio/loops/*.mp4 ]] 2>/dev/null; then
+LOOP_COUNT=$(find /var/lib/radio/loops -maxdepth 1 -name "*.mp4" 2>/dev/null | wc -l)
+if [[ "$LOOP_COUNT" -eq 0 ]]; then
     echo ""
     echo "⚠️  WARNING: No video loop files found in /var/lib/radio/loops/"
     echo "    Upload at least one .mp4 file (1920x1080, 30fps, H.264) before starting"
     echo ""
-    read -p "    Press Enter to continue anyway, or Ctrl+C to abort..."
 fi
 
-# Check if music files exist
-MUSIC_COUNT=$(find /var/lib/radio/music -name "*.mp3" -o -name "*.MP3" 2>/dev/null | wc -l)
+# Check if music files exist (check both paths)
+MUSIC_COUNT=$(find /var/lib/radio/music /srv/radio/content -name "*.mp3" -o -name "*.MP3" 2>/dev/null | wc -l)
 if [[ "$MUSIC_COUNT" -eq 0 ]]; then
     echo ""
-    echo "⚠️  WARNING: No music files found in /var/lib/radio/music/"
+    echo "⚠️  WARNING: No music files found"
     echo "    Upload .mp3 files before starting the radio"
     echo ""
-    read -p "    Press Enter to continue anyway, or Ctrl+C to abort..."
 else
     echo "    Found $MUSIC_COUNT music files"
 fi
