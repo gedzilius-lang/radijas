@@ -184,12 +184,11 @@ server {
         }
     }
 
-    # Now playing API (metadata)
-    location /api/nowplaying {
-        alias /var/www/radio/data/nowplaying.json;
-        add_header Content-Type application/json;
-        add_header Cache-Control "no-cache, no-store";
-        add_header Access-Control-Allow-Origin *;
+    # API proxy to radio-api service
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
     }
 
     # Static files
@@ -230,6 +229,19 @@ if [[ -f /etc/nginx/sites-enabled/default ]]; then
     rm -f /etc/nginx/sites-enabled/default
     echo "    Disabled default site to avoid port 80 conflicts"
 fi
+
+# Create safe default server (rejects unmatched hosts)
+cat > /etc/nginx/sites-available/00-default.conf <<'DEFAULTEOF'
+# Safe default - reject unmatched hosts
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}
+DEFAULTEOF
+ln -sf /etc/nginx/sites-available/00-default.conf /etc/nginx/sites-enabled/00-default.conf
+echo "    Created safe default server (00-default.conf)"
 
 # Include RTMP config in main nginx.conf if not already included
 echo "[6/7] Updating main nginx.conf..."
