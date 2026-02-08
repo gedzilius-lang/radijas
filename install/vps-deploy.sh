@@ -122,6 +122,7 @@ chown -R liquidsoap:audio /var/lib/liquidsoap /var/log/liquidsoap /etc/liquidsoa
 chown -R www-data:www-data /var/www/radio
 
 mkdir -p /run/radio /var/lib/radio-hls-relay
+echo "autodj" > /run/radio/active
 chown -R radio:radio /run/radio /var/lib/radio-hls-relay
 
 mkdir -p /var/www/radio.peoplewelike.club
@@ -375,20 +376,10 @@ saturday  = switch(track_sensitive=false, [({6h-12h and 6w}, pl_sat_morning), ({
 sunday    = switch(track_sensitive=false, [({6h-12h and 7w}, pl_sun_morning), ({12h-18h and 7w}, pl_sun_day), ({(18h-24h or 0h-6h) and 7w}, pl_sun_night)])
 
 scheduled = fallback(track_sensitive=false, [monday, tuesday, wednesday, thursday, friday, saturday, sunday, pl_default, emergency])
-radio = crossfade(duration=2.0, scheduled)
+radio = fallback(track_sensitive=false, [scheduled, blank()])
 
-# Metadata -> JSON (Liquidsoap 2.0.x: use source.on_metadata)
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
-def handle_metadata(m)
-  title  = m["title"]
-  artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
-  file.write(data=json_data, nowplaying_file)
-  print("Now playing: #{artist} - #{title}")
-end
-radio.on_metadata(handle_metadata)
-
-# Output audio-only to RTMP (Liquidsoap 2.x output.url syntax)
+# Output audio-only to RTMP (Liquidsoap 2.x)
+# Metadata is read from journal logs by radio-switchd
 output.url(
   fallible=true,
   url="rtmp://127.0.0.1:1935/autodj_audio/stream",
@@ -407,16 +398,6 @@ settings.log.stdout.set(true)
 all_music = playlist(mode="random", reload_mode="watch", "/var/lib/radio/music")
 emergency = blank(id="emergency")
 radio = fallback(track_sensitive=false, [all_music, emergency])
-radio = crossfade(duration=2.0, radio)
-
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
-def handle_metadata(m)
-  title = m["title"]; artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
-  file.write(data=json_data, nowplaying_file)
-  print("Now playing: #{artist} - #{title}")
-end
-radio.on_metadata(handle_metadata)
 
 output.url(
   fallible=true,
@@ -497,37 +478,17 @@ step "hls-switch (RTMP publish hook)"
 # ============================================================================
 cat > /usr/local/bin/hls-switch <<'EOF'
 #!/usr/bin/env bash
+# Called by nginx RTMP on_publish / on_publish_done
+# Only updates the active source flag - relay handles the rest
 set -euo pipefail
-HLS_ROOT="/var/www/hls"
-AUTODJ_DIR="$HLS_ROOT/autodj"
-LIVE_DIR="$HLS_ROOT/live"
-PLACEHOLDER_DIR="$HLS_ROOT/placeholder"
-CURRENT="$HLS_ROOT/current"
+ACTIVE_FILE="/run/radio/active"
 mode="${1:-}"
-lock="/run/hls-switch.lock"
-has_real_ts() {
-  local m3u8="$1"
-  [[ -f "$m3u8" ]] || return 1
-  grep -qE '^(index|live|stream)-[0-9]+\.ts$|^index-[0-9]+\.ts$' "$m3u8"
-}
-do_switch() {
-  ln -sfn "$1" "$CURRENT"
-  chown -h www-data:www-data "$CURRENT" 2>/dev/null || true
-}
-(
-  flock -w 10 9
-  case "$mode" in
-    autodj) do_switch "$AUTODJ_DIR" ;;
-    live)
-      for i in {1..10}; do
-        if has_real_ts "$LIVE_DIR/index.m3u8"; then do_switch "$LIVE_DIR"; exit 0; fi
-        sleep 1
-      done
-      do_switch "$AUTODJ_DIR" ;;
-    placeholder) do_switch "$PLACEHOLDER_DIR" ;;
-    *) echo "Usage: hls-switch {autodj|live|placeholder}" >&2; exit 2 ;;
-  esac
-) 9>"$lock"
+mkdir -p /run/radio
+case "$mode" in
+    live)   printf "live\n"   > "$ACTIVE_FILE" ;;
+    autodj) printf "autodj\n" > "$ACTIVE_FILE" ;;
+    *)      echo "Usage: hls-switch {autodj|live}" >&2; exit 2 ;;
+esac
 EOF
 chmod +x /usr/local/bin/hls-switch
 ok "hls-switch hook"
@@ -538,16 +499,12 @@ step "radio-switchd (live health detection daemon)"
 cat > /usr/local/bin/radio-switchd <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-HLS_ROOT="/var/www/hls"
-LIVE_DIR="$HLS_ROOT/live"
-ACTIVE_DIR="/run/radio"
-ACTIVE_FILE="$ACTIVE_DIR/active"
-NOWPLAYING_FILE="/var/www/radio/data/nowplaying.json"
+ACTIVE_FILE="/run/radio/active"
 RTMP_STAT_URL="http://127.0.0.1:8089/rtmp_stat"
+NOWPLAYING="/var/www/radio/data/nowplaying.json"
 
 log(){ echo "[$(date -Is)] $*"; }
-latest_ts(){ awk '/^index-[0-9]+\.ts$/{s=$0} END{print s}' "$1"; }
-mtime_age_s(){ local now m; now="$(date +%s)"; m="$(stat -c %Y "$1" 2>/dev/null || echo 0)"; echo $(( now - m )); }
+
 live_nclients(){
   curl -fsS "$RTMP_STAT_URL" 2>/dev/null | awk '
     $0 ~ /<application>/ {inapp=1; name=""}
@@ -555,31 +512,52 @@ live_nclients(){
     name=="live" && $0 ~ /<nclients>/ { gsub(/.*<nclients>|<\/nclients>.*/,"",$0); print $0; exit }
   ' | tr -d '\r' | awk '{print ($1==""?0:$1)}'
 }
-set_active(){ mkdir -p "$ACTIVE_DIR"; printf "%s\n" "$1" >"${ACTIVE_FILE}.tmp"; mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"; }
-update_nowplaying_live(){
-  if [[ -f "$NOWPLAYING_FILE" ]]; then
-    printf '{"title":"LIVE-SHOW","artist":"Live Broadcast","mode":"live","updated":"%s"}' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${NOWPLAYING_FILE}.tmp"
-    mv "${NOWPLAYING_FILE}.tmp" "$NOWPLAYING_FILE"
-  fi
-}
-is_live_healthy(){
-  local m3u8="$LIVE_DIR/index.m3u8"
-  [[ -f "$m3u8" ]] || return 1
-  grep -qE '^index-[0-9]+\.ts$' "$m3u8" || return 1
-  local ts; ts="$(latest_ts "$m3u8")"
-  [[ -n "$ts" && -f "$LIVE_DIR/$ts" ]] || return 1
-  local age lc; age="$(mtime_age_s "$m3u8")"; lc="$(live_nclients || echo 0)"
-  [[ "${lc:-0}" -gt 0 ]] && return 0
-  [[ "$age" -le 8 ]] && return 0
-  return 1
+
+set_active(){
+  mkdir -p "$(dirname "$ACTIVE_FILE")"
+  printf "%s\n" "$1" > "${ACTIVE_FILE}.tmp"
+  mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
 }
 
-mkdir -p "$ACTIVE_DIR"; last=""
-while true; do
-  if is_live_healthy; then
-    if [[ "$last" != "live" ]]; then set_active "live"; last="live"; update_nowplaying_live; log "ACTIVE -> live"; fi
+update_nowplaying(){
+  local mode="$1"
+  if [[ "$mode" == "live" ]]; then
+    printf '{"title":"LIVE SHOW","artist":"Live Broadcast","mode":"live"}' > "${NOWPLAYING}.tmp"
   else
-    if [[ "$last" != "autodj" ]]; then set_active "autodj"; last="autodj"; log "ACTIVE -> autodj"; fi
+    local np
+    np=$(journalctl -u liquidsoap-autodj --no-pager -n 50 2>/dev/null | grep -oP 'Now playing: \K.*' | tail -1)
+    if [[ -n "$np" ]]; then
+      local artist="${np%% - *}"
+      local title="${np#* - }"
+      printf '{"title":"%s","artist":"%s","mode":"autodj"}' "$title" "$artist" > "${NOWPLAYING}.tmp"
+    else
+      printf '{"title":"AutoDJ","artist":"People We Like Radio","mode":"autodj"}' > "${NOWPLAYING}.tmp"
+    fi
+  fi
+  mv "${NOWPLAYING}.tmp" "$NOWPLAYING" 2>/dev/null || true
+}
+
+mkdir -p "$(dirname "$ACTIVE_FILE")" "$(dirname "$NOWPLAYING")"
+last=""; np_counter=0
+
+while true; do
+  lc="$(live_nclients 2>/dev/null || echo 0)"
+  if [[ "${lc:-0}" -gt 0 ]]; then
+    if [[ "$last" != "live" ]]; then
+      set_active "live"; last="live"
+      update_nowplaying "live"
+      log "ACTIVE -> live (nclients=$lc)"
+    fi
+  else
+    if [[ "$last" != "autodj" ]]; then
+      set_active "autodj"; last="autodj"
+      update_nowplaying "autodj"
+      log "ACTIVE -> autodj"
+    fi
+  fi
+  np_counter=$((np_counter + 1))
+  if [[ "$last" == "autodj" && $((np_counter % 10)) -eq 0 ]]; then
+    update_nowplaying "autodj"
   fi
   sleep 1
 done
