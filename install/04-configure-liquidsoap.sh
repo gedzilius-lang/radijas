@@ -234,25 +234,9 @@ radio = normalize(radio)
 # METADATA HANDLING
 # ============================================
 
-# Log track changes in a deterministic format for radio-nowplayingd to parse.
-# NOTE: Do NOT use file.write() here - it crashes Liquidsoap in some versions.
-# The separate radio-nowplayingd daemon reads these log lines and writes JSON.
-
-def log_nowplaying(m)
-  title = m["title"]
-  artist = m["artist"]
-  filename = m["filename"]
-
-  if title != "" or artist != "" then
-    log("TRACKMETA: #{artist} - #{title}")
-  elsif filename != "" then
-    log("TRACKFILE: #{filename}")
-  end
-
-  m
-end
-
-radio = metadata.map(log_nowplaying, radio)
+# No custom metadata callback - Liquidsoap naturally logs track changes
+# (e.g. "Prepared ..." lines). The radio-nowplayingd daemon parses
+# the log file to extract track info.
 
 # ============================================
 # OUTPUT TO RTMP
@@ -304,24 +288,7 @@ radio = crossfade(duration=3.0, radio)
 # Normalize
 radio = normalize(radio)
 
-# Log track changes for radio-nowplayingd to parse
-# NOTE: Do NOT use file.write() - it crashes Liquidsoap in some versions.
-
-def log_nowplaying(m)
-  title = m["title"]
-  artist = m["artist"]
-  filename = m["filename"]
-
-  if title != "" or artist != "" then
-    log("TRACKMETA: #{artist} - #{title}")
-  elsif filename != "" then
-    log("TRACKFILE: #{filename}")
-  end
-
-  m
-end
-
-radio = metadata.map(log_nowplaying, radio)
+# No custom metadata callback - parsed from log by radio-nowplayingd
 
 # Output to RTMP
 output.url(

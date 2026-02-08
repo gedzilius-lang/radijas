@@ -456,8 +456,12 @@ cat > /usr/local/bin/radio-nowplayingd <<'NPEOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-# radio-nowplayingd — reads Liquidsoap log lines and writes nowplaying.json
-# Parses TRACKMETA: / TRACKFILE: lines emitted by the Liquidsoap metadata hook.
+# radio-nowplayingd — reads Liquidsoap log and journald for track info
+# Parses Liquidsoap's built-in log lines:
+#   - 'Prepared "/path/to/Artist - Title.mp3"'
+#   - 'TRACKMETA: Artist - Title'  (if custom callback exists)
+#   - 'TRACKFILE: /path/to/file'   (if custom callback exists)
+# Also checks journald as fallback if log file doesn't exist.
 
 ACTIVE="/run/radio/active"
 LOGF="/var/log/liquidsoap/radio.log"
@@ -474,8 +478,24 @@ write_json() {
   mv "${OUT}.tmp" "$OUT" || true
 }
 
+# Extract artist/title from a filename (without path or extension)
+parse_filename() {
+  local base="$1"
+  base="${base//_/ }"
+  if [[ "$base" == *" - "* ]]; then
+    NP_ARTIST="${base%% - *}"
+    NP_TITLE="${base#* - }"
+  else
+    NP_ARTIST="People We Like"
+    NP_TITLE="$base"
+  fi
+}
+
 # Start with loading state
 write_json "autodj" "People We Like" "Loading..."
+
+NP_ARTIST=""
+NP_TITLE=""
 
 while true; do
   mode="$(cat "$ACTIVE" 2>/dev/null || echo autodj)"
@@ -487,8 +507,24 @@ while true; do
     continue
   fi
 
-  # In autodj mode, parse the Liquidsoap log for the latest track
-  line="$(grep -E 'TRACKMETA:|TRACKFILE:' "$LOGF" 2>/dev/null | tail -n 1 || true)"
+  # Try to find latest track from log file or journald
+  line=""
+
+  # Source 1: Liquidsoap log file
+  if [[ -f "$LOGF" ]]; then
+    # Try custom TRACKMETA/TRACKFILE lines first
+    line="$(grep -E 'TRACKMETA:|TRACKFILE:' "$LOGF" 2>/dev/null | tail -n 1 || true)"
+    # Fallback: Liquidsoap built-in "Prepared" lines
+    if [[ -z "$line" ]]; then
+      line="$(grep -i 'Prepared' "$LOGF" 2>/dev/null | tail -n 1 || true)"
+    fi
+  fi
+
+  # Source 2: journald fallback
+  if [[ -z "$line" ]]; then
+    line="$(journalctl -u liquidsoap-autodj --no-pager -n 200 2>/dev/null \
+      | grep -iE 'Prepared|TRACKMETA:|TRACKFILE:|on_track' | tail -n 1 || true)"
+  fi
 
   if [[ -z "$line" ]]; then
     write_json "autodj" "People We Like" "Loading..."
@@ -496,28 +532,39 @@ while true; do
     continue
   fi
 
+  # Parse the line
   if [[ "$line" == *"TRACKMETA:"* ]]; then
     val="${line#*TRACKMETA: }"
-    artist="${val%% - *}"
-    title="${val#* - }"
-    # If there was no " - " separator, treat the whole string as title
-    [[ "$artist" == "$val" ]] && artist="People We Like"
-    [[ "$title" == "$val" ]] && title="$val"
-    write_json "autodj" "$artist" "$title"
+    NP_ARTIST="${val%% - *}"
+    NP_TITLE="${val#* - }"
+    [[ "$NP_ARTIST" == "$val" ]] && NP_ARTIST="People We Like"
+    [[ "$NP_TITLE" == "$val" ]] && NP_TITLE="$val"
+
   elif [[ "$line" == *"TRACKFILE:"* ]]; then
     file="${line#*TRACKFILE: }"
     base="$(basename "$file")"
     base="${base%.*}"
-    # Replace underscores with spaces for readability
-    base="${base//_/ }"
-    if [[ "$base" == *" - "* ]]; then
-      artist="${base%% - *}"
-      title="${base#* - }"
-    else
-      artist="People We Like"
-      title="$base"
+    parse_filename "$base"
+
+  elif [[ "$line" == *"Prepared"* ]]; then
+    # Liquidsoap logs: ... Prepared "/path/to/file.mp3" ...
+    # Extract the quoted path
+    filepath="$(echo "$line" | grep -oP 'Prepared\s+"?\K[^"]+' || true)"
+    if [[ -z "$filepath" ]]; then
+      # Try without quotes
+      filepath="$(echo "$line" | sed -n 's/.*Prepared[[:space:]]*//p' | sed 's/[[:space:]].*//')"
     fi
-    write_json "autodj" "$artist" "$title"
+    if [[ -n "$filepath" ]]; then
+      base="$(basename "$filepath")"
+      base="${base%.*}"
+      parse_filename "$base"
+    fi
+  fi
+
+  if [[ -n "$NP_TITLE" ]]; then
+    write_json "autodj" "$NP_ARTIST" "$NP_TITLE"
+  else
+    write_json "autodj" "People We Like" "Loading..."
   fi
 
   sleep 2
