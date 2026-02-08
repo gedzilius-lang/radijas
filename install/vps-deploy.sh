@@ -331,15 +331,14 @@ step "Liquidsoap AutoDJ (schedule-based playlists)"
 # ============================================================================
 cat > /etc/liquidsoap/radio.liq <<'LIQEOF'
 #!/usr/bin/liquidsoap
-settings.server.telnet := true
-settings.server.telnet.port := 1234
-settings.log.file.path := "/var/log/liquidsoap/radio.log"
-settings.log.level := 3
+# People We Like Radio - AutoDJ (Liquidsoap 2.x compatible)
+settings.init.allow_root.set(true)
+settings.log.stdout.set(true)
 
 music_root = "/var/lib/radio/music"
 
 def make_playlist(folder)
-  playlist(mode="randomize", reload_mode="watch", folder)
+  playlist(mode="random", reload_mode="watch", folder)
 end
 
 pl_mon_morning = make_playlist("#{music_root}/monday/morning")
@@ -376,39 +375,41 @@ saturday  = switch(track_sensitive=false, [({6h-12h and 6w}, pl_sat_morning), ({
 sunday    = switch(track_sensitive=false, [({6h-12h and 7w}, pl_sun_morning), ({12h-18h and 7w}, pl_sun_day), ({(18h-24h or 0h-6h) and 7w}, pl_sun_night)])
 
 scheduled = fallback(track_sensitive=false, [monday, tuesday, wednesday, thursday, friday, saturday, sunday, pl_default, emergency])
-radio = crossfade(duration=3.0, fade_in=1.5, fade_out=1.5, scheduled)
-radio = normalize(radio)
+radio = crossfade(duration=2.0, scheduled)
 
+# Metadata -> JSON
 nowplaying_file = "/var/www/radio/data/nowplaying.json"
 def write_nowplaying(m)
   title  = m["title"]
   artist = m["artist"]
-  album  = m["album"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
+  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
   m
 end
 radio = metadata.map(write_nowplaying, radio)
 
-output.rtmp(
-  host="127.0.0.1", port=1935, app="autodj_audio", stream="stream",
-  encoder="libfdk_aac", bitrate=128, samplerate=44100, stereo=true, radio
+# Output audio-only to RTMP (Liquidsoap 2.x output.url syntax)
+output.url(
+  fallible=true,
+  url="rtmp://127.0.0.1:1935/autodj_audio/stream",
+  %ffmpeg(format="flv", %audio(codec="aac", b="128k", ar=44100, channels=2)),
+  radio
 )
 LIQEOF
 
 # Simpler fallback config
 cat > /etc/liquidsoap/radio-simple.liq <<'LIQSIMPLE'
 #!/usr/bin/liquidsoap
-settings.server.telnet := true
-settings.server.telnet.port := 1234
-settings.log.file.path := "/var/log/liquidsoap/radio.log"
-settings.log.level := 3
-all_music = playlist(mode="randomize", reload_mode="watch", "/var/lib/radio/music")
+# Fallback config - scans all music subdirectories (Liquidsoap 2.x)
+settings.init.allow_root.set(true)
+settings.log.stdout.set(true)
+
+all_music = playlist(mode="random", reload_mode="watch", "/var/lib/radio/music")
 emergency = blank(id="emergency")
 radio = fallback(track_sensitive=false, [all_music, emergency])
-radio = crossfade(duration=3.0, radio)
-radio = normalize(radio)
+radio = crossfade(duration=2.0, radio)
+
 nowplaying_file = "/var/www/radio/data/nowplaying.json"
 def write_nowplaying(m)
   title = m["title"]; artist = m["artist"]
@@ -418,8 +419,13 @@ def write_nowplaying(m)
   m
 end
 radio = metadata.map(write_nowplaying, radio)
-output.rtmp(host="127.0.0.1", port=1935, app="autodj_audio", stream="stream",
-  encoder="libfdk_aac", bitrate=128, samplerate=44100, stereo=true, radio)
+
+output.url(
+  fallible=true,
+  url="rtmp://127.0.0.1:1935/autodj_audio/stream",
+  %ffmpeg(format="flv", %audio(codec="aac", b="128k", ar=44100, channels=2)),
+  radio
+)
 LIQSIMPLE
 
 chown -R liquidsoap:audio /etc/liquidsoap
