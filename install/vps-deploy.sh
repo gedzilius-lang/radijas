@@ -382,7 +382,7 @@ nowplaying_file = "/var/www/radio/data/nowplaying.json"
 def write_nowplaying(m)
   title  = m["title"]
   artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
+  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
   m
@@ -413,7 +413,7 @@ radio = crossfade(duration=2.0, radio)
 nowplaying_file = "/var/www/radio/data/nowplaying.json"
 def write_nowplaying(m)
   title = m["title"]; artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
+  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
   m
