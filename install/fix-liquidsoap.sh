@@ -43,8 +43,8 @@ cat > /etc/liquidsoap/radio.liq <<'LIQEOF'
 settings.init.allow_root.set(true)
 settings.log.stdout.set(true)
 
-# Simple playlist from default folder - no schedule, no crossfade
-radio = playlist(mode="random", "/var/lib/radio/music/default")
+# Scan ALL music subdirectories (default, weekday/phase, etc.)
+radio = playlist(mode="random", reload_mode="watch", "/var/lib/radio/music")
 radio = fallback(track_sensitive=false, [radio, blank()])
 
 # Metadata -> nowplaying JSON (Liquidsoap 2.0.x API)
