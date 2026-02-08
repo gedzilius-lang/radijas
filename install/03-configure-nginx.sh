@@ -174,9 +174,9 @@ server {
         }
     }
 
-    # Now playing API (metadata)
-    location /api/nowplaying {
-        alias /var/www/radio/data/nowplaying.json;
+    # API endpoints (nowplaying.json, status.json)
+    location /api/ {
+        alias /var/www/radio/data/;
         add_header Content-Type application/json;
         add_header Cache-Control "no-cache, no-store";
         add_header Access-Control-Allow-Origin *;

@@ -449,15 +449,93 @@ chmod +x /usr/local/bin/radio-hls-relay
 echo "    Created /usr/local/bin/radio-hls-relay"
 
 # ============================================
-# 5. Radio Control Script
+# 5. Radio Now-Playing Daemon
 # ============================================
-echo "[5/5] Creating radio-ctl control script..."
+echo "[5/6] Creating radio-nowplayingd script..."
+cat > /usr/local/bin/radio-nowplayingd <<'NPEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# radio-nowplayingd — reads Liquidsoap log lines and writes nowplaying.json
+# Parses TRACKMETA: / TRACKFILE: lines emitted by the Liquidsoap metadata hook.
+
+ACTIVE="/run/radio/active"
+LOGF="/var/log/liquidsoap/radio.log"
+OUT="/var/www/radio/data/nowplaying.json"
+
+mkdir -p "$(dirname "$OUT")"
+
+write_json() {
+  local mode="$1" artist="$2" title="$3"
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"mode":"%s","artist":"%s","title":"%s","updated":"%s"}\n' \
+    "$mode" "$artist" "$title" "$ts" > "${OUT}.tmp"
+  mv "${OUT}.tmp" "$OUT" || true
+}
+
+# Start with loading state
+write_json "autodj" "People We Like" "Loading..."
+
+while true; do
+  mode="$(cat "$ACTIVE" 2>/dev/null || echo autodj)"
+
+  # When live, show live broadcast metadata
+  if [[ "$mode" == "live" ]]; then
+    write_json "live" "Live Broadcast" "LIVE SHOW"
+    sleep 1
+    continue
+  fi
+
+  # In autodj mode, parse the Liquidsoap log for the latest track
+  line="$(grep -E 'TRACKMETA:|TRACKFILE:' "$LOGF" 2>/dev/null | tail -n 1 || true)"
+
+  if [[ -z "$line" ]]; then
+    write_json "autodj" "People We Like" "Loading..."
+    sleep 2
+    continue
+  fi
+
+  if [[ "$line" == *"TRACKMETA:"* ]]; then
+    val="${line#*TRACKMETA: }"
+    artist="${val%% - *}"
+    title="${val#* - }"
+    # If there was no " - " separator, treat the whole string as title
+    [[ "$artist" == "$val" ]] && artist="People We Like"
+    [[ "$title" == "$val" ]] && title="$val"
+    write_json "autodj" "$artist" "$title"
+  elif [[ "$line" == *"TRACKFILE:"* ]]; then
+    file="${line#*TRACKFILE: }"
+    base="$(basename "$file")"
+    base="${base%.*}"
+    # Replace underscores with spaces for readability
+    base="${base//_/ }"
+    if [[ "$base" == *" - "* ]]; then
+      artist="${base%% - *}"
+      title="${base#* - }"
+    else
+      artist="People We Like"
+      title="$base"
+    fi
+    write_json "autodj" "$artist" "$title"
+  fi
+
+  sleep 2
+done
+NPEOF
+chmod +x /usr/local/bin/radio-nowplayingd
+echo "    Created /usr/local/bin/radio-nowplayingd"
+
+# ============================================
+# 6. Radio Control Script
+# ============================================
+echo "[6/6] Creating radio-ctl control script..."
 cat > /usr/local/bin/radio-ctl <<'CTLEOF'
 #!/usr/bin/env bash
 # Radio Control Script - Manage radio services
 set -euo pipefail
 
-SERVICES="liquidsoap-autodj autodj-video-overlay radio-switchd radio-hls-relay"
+SERVICES="liquidsoap-autodj autodj-video-overlay radio-switchd radio-hls-relay radio-nowplayingd"
 
 usage() {
     echo "Usage: radio-ctl {start|stop|restart|status|logs}"
@@ -540,6 +618,7 @@ echo "  /usr/local/bin/autodj-video-overlay - Video overlay generator"
 echo "  /usr/local/bin/radio-switchd        - Live/AutoDJ switch daemon"
 echo "  /usr/local/bin/hls-switch           - Legacy switch hook"
 echo "  /usr/local/bin/radio-hls-relay      - Seamless HLS relay"
+echo "  /usr/local/bin/radio-nowplayingd    - Now-playing metadata daemon"
 echo "  /usr/local/bin/radio-ctl            - Service control utility"
 echo ""
 echo "Next step: Run ./06-create-services.sh"

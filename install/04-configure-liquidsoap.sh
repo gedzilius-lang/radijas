@@ -233,30 +233,25 @@ radio = normalize(radio)
 # METADATA HANDLING
 # ============================================
 
-# JSON file for now-playing data
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
+# Log track changes in a deterministic format for radio-nowplayingd to parse.
+# NOTE: Do NOT use file.write() here - it crashes Liquidsoap in some versions.
+# The separate radio-nowplayingd daemon reads these log lines and writes JSON.
 
-def write_nowplaying(m)
+def log_nowplaying(m)
   title = m["title"]
   artist = m["artist"]
-  album = m["album"]
   filename = m["filename"]
 
-  # Create JSON output
-  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
+  if title != "" or artist != "" then
+    log("TRACKMETA: #{artist} - #{title}")
+  elsif filename != "" then
+    log("TRACKFILE: #{filename}")
+  end
 
-  # Write to file
-  file.write(data=json_data, nowplaying_file)
-
-  # Log
-  print("Now playing: #{artist} - #{title}")
-
-  # Return metadata unchanged
   m
 end
 
-# Apply metadata handler
-radio = metadata.map(write_nowplaying, radio)
+radio = metadata.map(log_nowplaying, radio)
 
 # ============================================
 # OUTPUT TO RTMP
@@ -312,19 +307,24 @@ radio = crossfade(duration=3.0, radio)
 # Normalize
 radio = normalize(radio)
 
-# Metadata JSON
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
+# Log track changes for radio-nowplayingd to parse
+# NOTE: Do NOT use file.write() - it crashes Liquidsoap in some versions.
 
-def write_nowplaying(m)
+def log_nowplaying(m)
   title = m["title"]
   artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
-  file.write(data=json_data, nowplaying_file)
-  print("Now playing: #{artist} - #{title}")
+  filename = m["filename"]
+
+  if title != "" or artist != "" then
+    log("TRACKMETA: #{artist} - #{title}")
+  elsif filename != "" then
+    log("TRACKFILE: #{filename}")
+  end
+
   m
 end
 
-radio = metadata.map(write_nowplaying, radio)
+radio = metadata.map(log_nowplaying, radio)
 
 # Output to RTMP
 output.rtmp(
