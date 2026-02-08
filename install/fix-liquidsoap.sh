@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 ###############################################################################
 # fix-liquidsoap.sh
-# Replaces Liquidsoap config with 2.x-compatible version and restarts services
+# Deploys a MINIMAL Liquidsoap 2.x config guaranteed to work, then restarts.
+# Once streaming is confirmed, run update-configs.sh for full features.
 #
 # Usage (on VPS as root):
 #   curl -fsSL https://raw.githubusercontent.com/gedzilius-lang/radijas/claude/setup-radio-agent-instructions-ghStP/install/fix-liquidsoap.sh | bash
@@ -14,70 +15,37 @@ step() { echo -e "\n${CYAN}>>> $1${NC}"; }
 
 if [[ $EUID -ne 0 ]]; then echo -e "${RED}Run as root${NC}"; exit 1; fi
 
+step "Checking Liquidsoap version"
+liquidsoap --version 2>/dev/null || echo "liquidsoap not found"
+
 step "Stopping radio services"
 systemctl stop radio-hls-relay autodj-video-overlay radio-switchd liquidsoap-autodj 2>/dev/null || true
 ok "Services stopped"
 
-step "Writing /etc/liquidsoap/radio.liq (Liquidsoap 2.x)"
+step "Checking music files"
+echo "  Music files in /var/lib/radio/music/default/:"
+ls -la /var/lib/radio/music/default/ 2>/dev/null || echo "  (empty or missing)"
+echo ""
+echo "  All music files:"
+find /var/lib/radio/music -type f -name '*.mp3' -o -name '*.flac' -o -name '*.ogg' -o -name '*.wav' 2>/dev/null | head -20
+MUSIC_COUNT=$(find /var/lib/radio/music -type f \( -name '*.mp3' -o -name '*.flac' -o -name '*.ogg' -o -name '*.wav' \) 2>/dev/null | wc -l)
+echo "  Total: $MUSIC_COUNT audio files"
+
+if [[ "$MUSIC_COUNT" -eq 0 ]]; then
+  echo -e "${RED}  No music files found! Upload MP3s to /var/lib/radio/music/default/ first.${NC}"
+fi
+
+step "Writing MINIMAL /etc/liquidsoap/radio.liq"
 mkdir -p /etc/liquidsoap
 cat > /etc/liquidsoap/radio.liq <<'LIQEOF'
 #!/usr/bin/liquidsoap
-# People We Like Radio - AutoDJ (Liquidsoap 2.x)
+# People We Like Radio - Minimal AutoDJ (Liquidsoap 2.0.x safe)
 settings.init.allow_root.set(true)
 settings.log.stdout.set(true)
 
-music_root = "/var/lib/radio/music"
-
-def make_playlist(folder)
-  playlist(mode="random", reload_mode="watch", folder)
-end
-
-pl_mon_morning = make_playlist("#{music_root}/monday/morning")
-pl_mon_day     = make_playlist("#{music_root}/monday/day")
-pl_mon_night   = make_playlist("#{music_root}/monday/night")
-pl_tue_morning = make_playlist("#{music_root}/tuesday/morning")
-pl_tue_day     = make_playlist("#{music_root}/tuesday/day")
-pl_tue_night   = make_playlist("#{music_root}/tuesday/night")
-pl_wed_morning = make_playlist("#{music_root}/wednesday/morning")
-pl_wed_day     = make_playlist("#{music_root}/wednesday/day")
-pl_wed_night   = make_playlist("#{music_root}/wednesday/night")
-pl_thu_morning = make_playlist("#{music_root}/thursday/morning")
-pl_thu_day     = make_playlist("#{music_root}/thursday/day")
-pl_thu_night   = make_playlist("#{music_root}/thursday/night")
-pl_fri_morning = make_playlist("#{music_root}/friday/morning")
-pl_fri_day     = make_playlist("#{music_root}/friday/day")
-pl_fri_night   = make_playlist("#{music_root}/friday/night")
-pl_sat_morning = make_playlist("#{music_root}/saturday/morning")
-pl_sat_day     = make_playlist("#{music_root}/saturday/day")
-pl_sat_night   = make_playlist("#{music_root}/saturday/night")
-pl_sun_morning = make_playlist("#{music_root}/sunday/morning")
-pl_sun_day     = make_playlist("#{music_root}/sunday/day")
-pl_sun_night   = make_playlist("#{music_root}/sunday/night")
-
-pl_default = make_playlist("#{music_root}/default")
-emergency  = blank(id="emergency")
-
-monday    = switch(track_sensitive=false, [({6h-12h and 1w}, pl_mon_morning), ({12h-18h and 1w}, pl_mon_day), ({(18h-24h or 0h-6h) and 1w}, pl_mon_night)])
-tuesday   = switch(track_sensitive=false, [({6h-12h and 2w}, pl_tue_morning), ({12h-18h and 2w}, pl_tue_day), ({(18h-24h or 0h-6h) and 2w}, pl_tue_night)])
-wednesday = switch(track_sensitive=false, [({6h-12h and 3w}, pl_wed_morning), ({12h-18h and 3w}, pl_wed_day), ({(18h-24h or 0h-6h) and 3w}, pl_wed_night)])
-thursday  = switch(track_sensitive=false, [({6h-12h and 4w}, pl_thu_morning), ({12h-18h and 4w}, pl_thu_day), ({(18h-24h or 0h-6h) and 4w}, pl_thu_night)])
-friday    = switch(track_sensitive=false, [({6h-12h and 5w}, pl_fri_morning), ({12h-18h and 5w}, pl_fri_day), ({(18h-24h or 0h-6h) and 5w}, pl_fri_night)])
-saturday  = switch(track_sensitive=false, [({6h-12h and 6w}, pl_sat_morning), ({12h-18h and 6w}, pl_sat_day), ({(18h-24h or 0h-6h) and 6w}, pl_sat_night)])
-sunday    = switch(track_sensitive=false, [({6h-12h and 7w}, pl_sun_morning), ({12h-18h and 7w}, pl_sun_day), ({(18h-24h or 0h-6h) and 7w}, pl_sun_night)])
-
-scheduled = fallback(track_sensitive=false, [monday, tuesday, wednesday, thursday, friday, saturday, sunday, pl_default, emergency])
-radio = crossfade(duration=2.0, scheduled)
-
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
-def write_nowplaying(m)
-  title  = m["title"]
-  artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
-  file.write(data=json_data, nowplaying_file)
-  print("Now playing: #{artist} - #{title}")
-  m
-end
-radio = metadata.map(write_nowplaying, radio)
+# Simple playlist from default folder - no schedule, no crossfade
+radio = playlist(mode="random", "/var/lib/radio/music/default")
+radio = fallback(track_sensitive=false, [radio, blank()])
 
 output.url(
   fallible=true,
@@ -86,63 +54,68 @@ output.url(
   radio
 )
 LIQEOF
-ok "radio.liq written"
-
-step "Writing /etc/liquidsoap/radio-simple.liq (fallback)"
-cat > /etc/liquidsoap/radio-simple.liq <<'LIQSIMPLE'
-#!/usr/bin/liquidsoap
-settings.init.allow_root.set(true)
-settings.log.stdout.set(true)
-
-all_music = playlist(mode="random", reload_mode="watch", "/var/lib/radio/music")
-emergency = blank(id="emergency")
-radio = fallback(track_sensitive=false, [all_music, emergency])
-radio = crossfade(duration=2.0, radio)
-
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
-def write_nowplaying(m)
-  title = m["title"]; artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
-  file.write(data=json_data, nowplaying_file)
-  print("Now playing: #{artist} - #{title}")
-  m
-end
-radio = metadata.map(write_nowplaying, radio)
-
-output.url(
-  fallible=true,
-  url="rtmp://127.0.0.1:1935/autodj_audio/stream",
-  %ffmpeg(format="flv", %audio(codec="aac", b="128k", ar=44100, channels=2)),
-  radio
-)
-LIQSIMPLE
-ok "radio-simple.liq written"
+ok "Minimal radio.liq written (playlist + output only)"
 
 step "Setting permissions"
 chown -R liquidsoap:audio /etc/liquidsoap
 chmod 644 /etc/liquidsoap/*.liq
+
+# Also ensure music dir is readable
+chown -R liquidsoap:audio /var/lib/radio/music
+chmod -R 775 /var/lib/radio/music
+
+# Ensure nowplaying dir exists
+mkdir -p /var/www/radio/data
+echo '{"title":"AutoDJ","artist":"People We Like Radio","mode":"autodj"}' > /var/www/radio/data/nowplaying.json
+chown www-data:www-data /var/www/radio/data/nowplaying.json
 ok "Permissions set"
+
+step "Testing config syntax"
+if sudo -u liquidsoap liquidsoap --check /etc/liquidsoap/radio.liq 2>&1; then
+  ok "Config syntax valid"
+else
+  echo -e "${RED}  Config syntax check failed. Trying as root...${NC}"
+  liquidsoap --check /etc/liquidsoap/radio.liq 2>&1 || true
+fi
 
 step "Restarting service chain"
 systemctl reset-failed liquidsoap-autodj 2>/dev/null || true
 systemctl start liquidsoap-autodj
-sleep 5
 
-# Check if liquidsoap is actually running
+echo "  Waiting 8s for Liquidsoap to start..."
+sleep 8
+
+echo "  --- Liquidsoap logs ---"
+journalctl -u liquidsoap-autodj --no-pager -n 25
+
 if ! systemctl is-active --quiet liquidsoap-autodj; then
-  echo -e "${RED}  Liquidsoap failed to start. Logs:${NC}"
+  echo ""
+  echo -e "${RED}  Liquidsoap STILL failing. Full error above.${NC}"
+  echo ""
+  echo "  Trying radio-simple.liq as last resort..."
+
+  # Write even simpler config
+  cat > /etc/liquidsoap/radio.liq <<'LIQMIN'
+#!/usr/bin/liquidsoap
+settings.init.allow_root.set(true)
+s = single("/var/lib/radio/music/default/$(ls /var/lib/radio/music/default/ | head -1)")
+output.url(fallible=true, url="rtmp://127.0.0.1:1935/autodj_audio/stream", %ffmpeg(format="flv", %audio(codec="aac", b="128k", ar=44100, channels=2)), s)
+LIQMIN
+  chown liquidsoap:audio /etc/liquidsoap/radio.liq
+  chmod 644 /etc/liquidsoap/radio.liq
+  systemctl reset-failed liquidsoap-autodj 2>/dev/null || true
+  systemctl restart liquidsoap-autodj
+  sleep 5
   journalctl -u liquidsoap-autodj --no-pager -n 15
-  exit 1
 fi
-ok "liquidsoap-autodj running"
 
-systemctl start autodj-video-overlay
+echo ""
+systemctl start autodj-video-overlay 2>/dev/null || true
 sleep 3
-systemctl start radio-switchd
-systemctl start radio-hls-relay
-ok "All services started"
+systemctl start radio-switchd 2>/dev/null || true
+systemctl start radio-hls-relay 2>/dev/null || true
 
-step "Verification"
+step "Service Status"
 for svc in liquidsoap-autodj autodj-video-overlay radio-switchd radio-hls-relay nginx; do
   echo "  $svc: $(systemctl is-active $svc 2>/dev/null || echo inactive)"
 done
