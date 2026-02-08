@@ -14,16 +14,17 @@ echo "[1/2] Creating Liquidsoap configuration..."
 cat > /etc/liquidsoap/radio.liq <<'LIQEOF'
 #!/usr/bin/liquidsoap
 # People We Like Radio - AutoDJ Configuration
-# Liquidsoap 2.x compatible
+# Liquidsoap 2.0.x compatible (uses .set() syntax)
 
 # ============================================
 # SETTINGS
 # ============================================
 
-settings.server.telnet := true
-settings.server.telnet.port := 1234
-settings.log.file.path := "/var/log/liquidsoap/radio.log"
-settings.log.level := 3
+settings.server.telnet.set(true)
+settings.server.telnet.port.set(1234)
+settings.log.file.set(true)
+settings.log.file.path.set("/var/log/liquidsoap/radio.log")
+settings.log.level.set(3)
 
 # ============================================
 # MUSIC LIBRARY PATHS
@@ -258,15 +259,10 @@ radio = metadata.map(log_nowplaying, radio)
 # ============================================
 
 # Output audio to nginx-rtmp autodj_audio application
-output.rtmp(
-  host="127.0.0.1",
-  port=1935,
-  app="autodj_audio",
-  stream="stream",
-  encoder="libfdk_aac",
-  bitrate=128,
-  samplerate=44100,
-  stereo=true,
+output.url(
+  fallible=true,
+  url="rtmp://127.0.0.1:1935/autodj_audio/stream",
+  %ffmpeg(format="flv", %audio(codec="aac", b="128k", ar=44100, channels=2)),
   radio
 )
 LIQEOF
@@ -280,10 +276,11 @@ cat > /etc/liquidsoap/radio-simple.liq <<'LIQSIMPLEEOF'
 # People We Like Radio - Simplified AutoDJ Configuration
 # Use this if the main config has issues
 
-settings.server.telnet := true
-settings.server.telnet.port := 1234
-settings.log.file.path := "/var/log/liquidsoap/radio.log"
-settings.log.level := 3
+settings.server.telnet.set(true)
+settings.server.telnet.port.set(1234)
+settings.log.file.set(true)
+settings.log.file.path.set("/var/log/liquidsoap/radio.log")
+settings.log.level.set(3)
 
 # Music root
 music_root = "/var/lib/radio/music"
@@ -327,15 +324,10 @@ end
 radio = metadata.map(log_nowplaying, radio)
 
 # Output to RTMP
-output.rtmp(
-  host="127.0.0.1",
-  port=1935,
-  app="autodj_audio",
-  stream="stream",
-  encoder="libfdk_aac",
-  bitrate=128,
-  samplerate=44100,
-  stereo=true,
+output.url(
+  fallible=true,
+  url="rtmp://127.0.0.1:1935/autodj_audio/stream",
+  %ffmpeg(format="flv", %audio(codec="aac", b="128k", ar=44100, channels=2)),
   radio
 )
 LIQSIMPLEEOF
