@@ -377,17 +377,16 @@ sunday    = switch(track_sensitive=false, [({6h-12h and 7w}, pl_sun_morning), ({
 scheduled = fallback(track_sensitive=false, [monday, tuesday, wednesday, thursday, friday, saturday, sunday, pl_default, emergency])
 radio = crossfade(duration=2.0, scheduled)
 
-# Metadata -> JSON
+# Metadata -> JSON (Liquidsoap 2.0.x: use source.on_metadata)
 nowplaying_file = "/var/www/radio/data/nowplaying.json"
-def write_nowplaying(m)
+def handle_metadata(m)
   title  = m["title"]
   artist = m["artist"]
   json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
-  m
 end
-radio = metadata.map(write_nowplaying, radio)
+radio.on_metadata(handle_metadata)
 
 # Output audio-only to RTMP (Liquidsoap 2.x output.url syntax)
 output.url(
@@ -411,14 +410,13 @@ radio = fallback(track_sensitive=false, [all_music, emergency])
 radio = crossfade(duration=2.0, radio)
 
 nowplaying_file = "/var/www/radio/data/nowplaying.json"
-def write_nowplaying(m)
+def handle_metadata(m)
   title = m["title"]; artist = m["artist"]
   json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
-  m
 end
-radio = metadata.map(write_nowplaying, radio)
+radio.on_metadata(handle_metadata)
 
 output.url(
   fallible=true,

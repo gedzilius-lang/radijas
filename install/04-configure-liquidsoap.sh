@@ -79,16 +79,15 @@ radio = crossfade(duration=2.0, scheduled)
 # Metadata -> JSON
 nowplaying_file = "/var/www/radio/data/nowplaying.json"
 
-def write_nowplaying(m)
+def handle_metadata(m)
   title  = m["title"]
   artist = m["artist"]
   json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
-  m
 end
 
-radio = metadata.map(write_nowplaying, radio)
+radio.on_metadata(handle_metadata)
 
 # Output audio to nginx-rtmp (Liquidsoap 2.x syntax)
 output.url(
@@ -118,16 +117,15 @@ radio = crossfade(duration=2.0, radio)
 
 nowplaying_file = "/var/www/radio/data/nowplaying.json"
 
-def write_nowplaying(m)
+def handle_metadata(m)
   title  = m["title"]
   artist = m["artist"]
   json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
-  m
 end
 
-radio = metadata.map(write_nowplaying, radio)
+radio.on_metadata(handle_metadata)
 
 output.url(
   fallible=true,

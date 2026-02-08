@@ -47,6 +47,17 @@ settings.log.stdout.set(true)
 radio = playlist(mode="random", "/var/lib/radio/music/default")
 radio = fallback(track_sensitive=false, [radio, blank()])
 
+# Metadata -> nowplaying JSON (Liquidsoap 2.0.x API)
+nowplaying_file = "/var/www/radio/data/nowplaying.json"
+def handle_metadata(m)
+  title  = m["title"]
+  artist = m["artist"]
+  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
+  file.write(data=json_data, nowplaying_file)
+  print("Now playing: #{artist} - #{title}")
+end
+radio.on_metadata(handle_metadata)
+
 output.url(
   fallible=true,
   url="rtmp://127.0.0.1:1935/autodj_audio/stream",

@@ -74,15 +74,14 @@ scheduled = fallback(track_sensitive=false, [monday, tuesday, wednesday, thursda
 radio = crossfade(duration=2.0, scheduled)
 
 nowplaying_file = "/var/www/radio/data/nowplaying.json"
-def write_nowplaying(m)
+def handle_metadata(m)
   title  = m["title"]
   artist = m["artist"]
   json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
-  m
 end
-radio = metadata.map(write_nowplaying, radio)
+radio.on_metadata(handle_metadata)
 
 output.url(
   fallible=true,
@@ -101,14 +100,13 @@ emergency = blank(id="emergency")
 radio = fallback(track_sensitive=false, [all_music, emergency])
 radio = crossfade(duration=2.0, radio)
 nowplaying_file = "/var/www/radio/data/nowplaying.json"
-def write_nowplaying(m)
+def handle_metadata(m)
   title = m["title"]; artist = m["artist"]
   json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj"}'
   file.write(data=json_data, nowplaying_file)
   print("Now playing: #{artist} - #{title}")
-  m
 end
-radio = metadata.map(write_nowplaying, radio)
+radio.on_metadata(handle_metadata)
 output.url(
   fallible=true,
   url="rtmp://127.0.0.1:1935/autodj_audio/stream",
