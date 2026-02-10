@@ -656,28 +656,26 @@ else
 fi
 
 ###############################################################################
-# 9. SSL (certbot)
+# 9. SSL (certbot) — always run to apply SSL to the nginx config we just wrote
 ###############################################################################
 log "--- Step 9: SSL ---"
 
-if [[ -f /etc/letsencrypt/live/radio.peoplewelike.club/fullchain.pem ]]; then
-  log "SSL cert already exists, skipping certbot"
+if command -v certbot &>/dev/null; then
+  log "Running certbot to apply SSL to nginx config..."
+  certbot --nginx \
+    -d radio.peoplewelike.club \
+    -d stream.peoplewelike.club \
+    --non-interactive \
+    --agree-tos \
+    --email admin@peoplewelike.club \
+    --redirect \
+    --keep-until-expiring || {
+      log "WARNING: certbot failed. HTTP will still work but no HTTPS."
+    }
+  # Reload nginx to pick up certbot changes
+  nginx -t 2>/dev/null && systemctl reload nginx
 else
-  if command -v certbot &>/dev/null; then
-    log "Running certbot..."
-    certbot --nginx \
-      -d radio.peoplewelike.club \
-      -d stream.peoplewelike.club \
-      --non-interactive \
-      --agree-tos \
-      --email admin@peoplewelike.club \
-      --redirect \
-      --keep-until-expiring || {
-        log "WARNING: certbot failed (DNS may not point here yet). HTTP will still work."
-      }
-  else
-    log "WARNING: certbot not installed. Run: apt install -y certbot python3-certbot-nginx"
-  fi
+  log "WARNING: certbot not installed. Run: apt install -y certbot python3-certbot-nginx"
 fi
 
 ###############################################################################
@@ -706,6 +704,25 @@ sleep 5
 # Check if Liquidsoap survived startup
 if systemctl is-active --quiet liquidsoap-autodj; then
   log "Liquidsoap: RUNNING"
+
+  # Wait for Liquidsoap to connect to RTMP and verify
+  log "Waiting for Liquidsoap RTMP connection..."
+  RTMP_OK=false
+  for i in {1..12}; do
+    if curl -fsS http://127.0.0.1:8089/rtmp_stat 2>/dev/null | grep -q "autodj_audio"; then
+      log "Liquidsoap -> RTMP autodj_audio: CONNECTED"
+      RTMP_OK=true
+      break
+    fi
+    sleep 2
+  done
+  if ! $RTMP_OK; then
+    log "WARNING: Liquidsoap RTMP connection not detected after 24s"
+    log "Liquidsoap log (output-related):"
+    grep -iE 'output|rtmp|connect|error|fail|url|ffmpeg' /var/log/liquidsoap/radio.log 2>/dev/null | tail -20 || true
+    log "Full recent log:"
+    tail -30 /var/log/liquidsoap/radio.log 2>/dev/null || true
+  fi
 else
   log "ERROR: Liquidsoap failed to start! Checking logs..."
   journalctl -u liquidsoap-autodj -n 30 --no-pager
@@ -716,13 +733,17 @@ else
 fi
 
 systemctl start autodj-video-overlay
-sleep 1
+sleep 2
 systemctl start radio-switchd
 sleep 1
 systemctl start radio-hls-relay
 sleep 1
 systemctl start radio-nowplayingd
-sleep 2
+
+# Give the full pipeline time to generate HLS segments
+# Chain: Liquidsoap -> RTMP autodj_audio -> FFmpeg overlay -> RTMP autodj -> nginx-rtmp -> HLS
+log "Waiting 20s for HLS pipeline to produce segments..."
+sleep 20
 
 ###############################################################################
 # 12. VERIFY
@@ -747,12 +768,32 @@ echo "AutoDJ HLS:    $(ls /var/www/hls/autodj/*.ts 2>/dev/null | wc -l) segments
 echo "Current HLS:   $(ls /var/www/hls/current/*.ts 2>/dev/null | wc -l) segments"
 echo ""
 
+# RTMP streams diagnostic
+echo "RTMP active streams:"
+for app in autodj_audio autodj live; do
+  if curl -fsS http://127.0.0.1:8089/rtmp_stat 2>/dev/null | grep -q "<name>${app}</name>"; then
+    nclients=$(curl -fsS http://127.0.0.1:8089/rtmp_stat 2>/dev/null | awk "/<name>${app}<\/name>/{found=1} found&&/<nclients>/{gsub(/.*<nclients>|<\/nclients>.*/,\"\",\$0);print;exit}")
+    echo "  $app: active (clients: ${nclients:-?})"
+  else
+    echo "  $app: not found"
+  fi
+done
+echo ""
+
 echo "Now-playing JSON:"
 cat /var/www/radio/data/nowplaying.json 2>/dev/null || echo "(not found)"
 echo ""
 
-echo "Liquidsoap log (last 10 lines):"
-tail -10 /var/log/liquidsoap/radio.log 2>/dev/null || echo "(empty or missing)"
+echo "Liquidsoap log (last 15 lines):"
+tail -15 /var/log/liquidsoap/radio.log 2>/dev/null || echo "(empty or missing)"
+echo ""
+
+echo "Overlay log (last 5 lines):"
+journalctl -u autodj-video-overlay -n 5 --no-pager -q 2>/dev/null || true
+echo ""
+
+echo "Relay log (last 5 lines):"
+journalctl -u radio-hls-relay -n 5 --no-pager -q 2>/dev/null || true
 echo ""
 
 # Test API via nginx
