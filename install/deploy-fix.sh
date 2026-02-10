@@ -68,6 +68,20 @@ LOOP_COUNT=$(find /var/lib/radio/loops -maxdepth 1 -type f \( -name "*.mp4" -o -
 [[ "$MUSIC_COUNT" -gt 0 ]] && ok "Music files: $MUSIC_COUNT" || warn "No music files in /var/lib/radio/music/ (will play silence)"
 [[ "$LOOP_COUNT" -gt 0 ]]  && ok "Video loops: $LOOP_COUNT"  || warn "No loop.mp4 in /var/lib/radio/loops/ (overlay will wait)"
 
+# Validate first loop.mp4 with ffprobe (if available)
+if [[ "$LOOP_COUNT" -gt 0 ]] && command -v ffprobe &>/dev/null; then
+  FIRST_LOOP="$(find /var/lib/radio/loops -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.MP4" \) -print -quit 2>/dev/null)"
+  if [[ -n "$FIRST_LOOP" ]]; then
+    V_CODEC="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$FIRST_LOOP" 2>/dev/null || true)"
+    V_RES="$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$FIRST_LOOP" 2>/dev/null || true)"
+    if [[ -n "$V_CODEC" ]]; then
+      ok "$(basename "$FIRST_LOOP"): video=$V_CODEC res=$V_RES"
+    else
+      fail "$(basename "$FIRST_LOOP") has NO video track! FFmpeg overlay needs a valid video file."
+    fi
+  fi
+fi
+
 ###############################################################################
 # PHASE 1 — STOP SERVICES
 ###############################################################################
@@ -660,8 +674,10 @@ User=root
 ExecStart=/usr/local/bin/autodj-video-overlay
 Restart=always
 RestartSec=3
+KillMode=mixed
 KillSignal=SIGINT
 TimeoutStopSec=10
+SendSIGKILL=yes
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 [Install]
 WantedBy=multi-user.target
@@ -940,6 +956,124 @@ chmod 644 /var/www/radio/data/*
 ok "Stale state cleaned, seed data written"
 
 ###############################################################################
+# PHASE 8b — DEPLOY PLAYER HTML
+###############################################################################
+echo ""
+echo "$DIVIDER"
+log "PHASE 8b: Player HTML deployment"
+echo "$DIVIDER"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -f /var/www/radio.peoplewelike.club/index.html ]]; then
+  ok "Player index.html already exists (preserved)"
+else
+  if [[ -f "${SCRIPT_DIR}/10-upgrade-player.sh" ]]; then
+    log "Running 10-upgrade-player.sh for full player..."
+    bash "${SCRIPT_DIR}/10-upgrade-player.sh" && ok "Full player deployed" || warn "10-upgrade-player.sh had errors"
+  else
+    log "Creating player (10-upgrade-player.sh not found, using built-in)..."
+    cat > /var/www/radio.peoplewelike.club/index.html <<'PLAYEREOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>People We Like Radio</title>
+<link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet">
+<style>
+:root{--bg:#0d0a1a;--card:#1a1329;--purple:#6b46c1;--purple-l:#9f7aea;--text:#e2e8f0;--muted:#a0aec0;--dim:#718096}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);min-height:100vh;color:var(--text);display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px}
+.wrap{max-width:960px;width:100%}
+header{text-align:center;padding:30px 0 20px}
+.logo{font-size:2em;font-weight:700;background:linear-gradient(135deg,var(--purple-l),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.tagline{color:var(--dim);font-size:.9em;letter-spacing:2px;text-transform:uppercase;margin-top:5px}
+.player-card{background:var(--card);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);border:1px solid rgba(107,70,193,.2)}
+.video-wrapper{position:relative;aspect-ratio:16/9;background:#000}
+.video-wrapper.hidden{display:none}
+.video-js{width:100%;height:100%}
+.audio-mode{aspect-ratio:16/9;background:linear-gradient(135deg,var(--bg),var(--card));display:none;align-items:center;justify-content:center;flex-direction:column;gap:20px}
+.audio-mode.active{display:flex}
+.audio-text{color:var(--muted);font-size:.9em}
+.np{padding:20px;background:rgba(0,0,0,.3);display:flex;align-items:center;gap:16px}
+.np-icon{width:50px;height:50px;background:linear-gradient(135deg,var(--purple),var(--purple-l));border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+.np-info{flex:1;min-width:0}
+.np-label{font-size:.7em;text-transform:uppercase;letter-spacing:2px;color:var(--dim);margin-bottom:4px}
+.np-title{font-size:1.1em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.np-artist{font-size:.9em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status{display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:20px;font-size:.75em;font-weight:600;text-transform:uppercase;letter-spacing:1px;background:rgba(107,70,193,.2);border:1px solid rgba(107,70,193,.4);color:var(--purple-l)}
+.status.live{background:rgba(229,62,62,.2);border-color:rgba(229,62,62,.4);color:#e53e3e}
+.status-dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.ctrls{padding:16px 20px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center;border-top:1px solid rgba(107,70,193,.1)}
+.btn{padding:12px 20px;border:none;border-radius:10px;font-size:.9em;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-p{background:linear-gradient(135deg,var(--purple),var(--purple-l));color:#fff}
+.btn-p:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(107,70,193,.4)}
+.btn-s{background:rgba(107,70,193,.15);color:var(--purple-l);border:1px solid rgba(107,70,193,.3)}
+.btn-s:hover{background:rgba(107,70,193,.25)}
+.btn-s.on{background:rgba(107,70,193,.3);border-color:var(--purple-l)}
+footer{text-align:center;padding:30px 20px;color:var(--dim);font-size:.85em}
+footer a{color:var(--purple-l);text-decoration:none}
+.video-js .vjs-big-play-button{background:var(--purple);border:none;border-radius:50%;width:80px;height:80px;line-height:80px}
+.video-js:hover .vjs-big-play-button{background:var(--purple-l)}
+.video-js .vjs-control-bar{background:rgba(13,10,26,.9)}
+.video-js .vjs-play-progress,.video-js .vjs-volume-level{background:var(--purple)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><div class="logo">People We Like</div><div class="tagline">Radio</div></header>
+<div class="player-card">
+  <div class="video-wrapper" id="vw">
+    <video id="rp" class="video-js vjs-big-play-centered" controls preload="auto">
+      <source src="/hls/current/index.m3u8" type="application/x-mpegURL">
+    </video>
+  </div>
+  <div class="audio-mode" id="am"><div class="audio-text">Audio Only Mode</div></div>
+  <div class="np">
+    <div class="np-icon">&#9835;</div>
+    <div class="np-info">
+      <div class="np-label" id="npl">Now Playing</div>
+      <div class="np-title" id="npt">Loading...</div>
+      <div class="np-artist" id="npa"></div>
+    </div>
+    <div class="status" id="si"><span class="status-dot"></span><span id="st">AutoDJ</span></div>
+  </div>
+  <div class="ctrls">
+    <button class="btn btn-p" id="bp">Play</button>
+    <button class="btn btn-s" id="bm">Mute</button>
+    <button class="btn btn-s" id="bv">Video Off</button>
+    <button class="btn btn-s" id="bf">Fullscreen</button>
+  </div>
+</div>
+<footer>&copy; 2024 People We Like Radio | <a href="https://peoplewelike.club">peoplewelike.club</a></footer>
+</div>
+<script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+<script>
+const p=videojs('rp',{liveui:true,html5:{vhs:{overrideNative:true,smoothQualityChange:true,allowSeeksWithinUnsafeLiveWindow:true},nativeAudioTracks:false,nativeVideoTracks:false},controls:true,autoplay:false,preload:'auto'});
+const bp=document.getElementById('bp'),bm=document.getElementById('bm'),bv=document.getElementById('bv'),bf=document.getElementById('bf');
+const vw=document.getElementById('vw'),am=document.getElementById('am');
+let ve=true;
+bp.onclick=()=>{p.paused()?p.play():p.pause()};
+bm.onclick=()=>{p.muted(!p.muted());bm.textContent=p.muted()?'Unmute':'Mute';bm.classList.toggle('on',p.muted())};
+bv.onclick=()=>{ve=!ve;vw.classList.toggle('hidden',!ve);am.classList.toggle('active',!ve);bv.textContent=ve?'Video Off':'Video On';bv.classList.toggle('on',!ve)};
+bf.onclick=()=>{p.isFullscreen()?p.exitFullscreen():p.requestFullscreen()};
+p.on('play',()=>{bp.textContent='Pause'});
+p.on('pause',()=>{bp.textContent='Play'});
+p.on('error',()=>{console.log('Recovering...');setTimeout(()=>{p.src({src:'/hls/current/index.m3u8',type:'application/x-mpegURL'});p.load()},3000)});
+async function np(){try{const r=await fetch('/api/nowplaying?'+Date.now());const d=await r.json();if(d.mode==='live'){document.getElementById('npl').textContent='LIVE';document.getElementById('npt').textContent=d.title||'LIVE SHOW';document.getElementById('npa').textContent=d.artist||'';document.getElementById('st').textContent='LIVE';document.getElementById('si').className='status live'}else{document.getElementById('npl').textContent='Now Playing';document.getElementById('npt').textContent=d.title||'Unknown Track';document.getElementById('npa').textContent=d.artist||'Unknown Artist';document.getElementById('st').textContent='AutoDJ';document.getElementById('si').className='status'}}catch(e){}}
+np();setInterval(np,5000);
+</script>
+</body>
+</html>
+PLAYEREOF
+    ok "Built-in player deployed to /var/www/radio.peoplewelike.club/index.html"
+  fi
+  chown -R www-data:www-data /var/www/radio.peoplewelike.club
+  chmod -R 755 /var/www/radio.peoplewelike.club
+fi
+
+###############################################################################
 # PHASE 9 — START SERVICES (ordered, with health checks)
 ###############################################################################
 echo ""
@@ -1096,6 +1230,28 @@ CURRENT_SEGS=$(ls /var/www/hls/current/seg-*.ts 2>/dev/null | wc -l)
 echo "  AutoDJ segments:  $AUTODJ_SEGS"
 echo "  Current segments: $CURRENT_SEGS"
 if [[ "$AUTODJ_SEGS" -gt 0 ]]; then ok "HLS pipeline producing segments"; else fail "No HLS segments"; ALL_OK=false; fi
+
+# Verify HLS segments contain video tracks (critical for overlay)
+if [[ "$AUTODJ_SEGS" -gt 0 ]] && command -v ffprobe &>/dev/null; then
+  SAMPLE_TS="$(ls -t /var/www/hls/autodj/*.ts 2>/dev/null | head -1)"
+  if [[ -n "$SAMPLE_TS" ]]; then
+    TS_STREAMS="$(ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$SAMPLE_TS" 2>/dev/null || true)"
+    if echo "$TS_STREAMS" | grep -q "video"; then
+      ok "HLS segments contain VIDEO track"
+    else
+      fail "HLS segments are AUDIO-ONLY — no video track found!"
+      echo "  Streams in $SAMPLE_TS: $TS_STREAMS"
+      echo "  This means the video overlay is NOT reaching nginx-rtmp HLS."
+      echo "  Check: journalctl -u autodj-video-overlay -n 20"
+      ALL_OK=false
+    fi
+    if echo "$TS_STREAMS" | grep -q "audio"; then
+      ok "HLS segments contain AUDIO track"
+    else
+      warn "HLS segments have no audio track"
+    fi
+  fi
+fi
 
 echo ""
 echo "--- Now-Playing API ---"
