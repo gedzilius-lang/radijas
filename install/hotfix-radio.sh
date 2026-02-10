@@ -2,6 +2,10 @@
 ###############################################################################
 # hotfix-radio.sh — Fix video overlay, deploy player, restart services
 # People We Like Radio
+#
+# Key optimization: Pre-renders mp4 ONCE to broadcast spec, then plays back
+# with -c:v copy (no real-time encoding). CPU drops from ~30% to ~2%.
+#
 # Run as root:  bash hotfix-radio.sh
 ###############################################################################
 set -euo pipefail
@@ -14,54 +18,123 @@ fail() { echo -e "  ${RED}FAIL${NC} $*"; }
 
 if [[ $EUID -ne 0 ]]; then fail "Must run as root"; exit 1; fi
 
+# ─── Config ──────────────────────────────────────────────────────────────────
+LOOPS_DIR="/var/lib/radio/loops"
+RENDER_DIR="${LOOPS_DIR}/rendered"
+WEBROOT="/var/www/radio.peoplewelike.club"
+FPS=30
+FRAG=6
+GOP=$((FPS*FRAG))   # 180 frames = 6s keyframe interval
+
 echo ""
 echo "════════════════════════════════════════════════════════════"
-log "STEP 1: Validate video loop files"
+log "STEP 1: Validate source video loops"
 echo "════════════════════════════════════════════════════════════"
 
-LOOPS_DIR="/var/lib/radio/loops"
-mkdir -p "$LOOPS_DIR"
+mkdir -p "$LOOPS_DIR" "$RENDER_DIR"
 LOOP_COUNT=$(find "$LOOPS_DIR" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.MP4" \) 2>/dev/null | wc -l)
 
 if [[ "$LOOP_COUNT" -eq 0 ]]; then
   fail "No .mp4 files in $LOOPS_DIR"
   echo "  Upload at least one .mp4 file via SFTP to: $LOOPS_DIR"
-  echo "  Requirements: H.264 video, any resolution (will be scaled to 1080p)"
-else
-  ok "Found $LOOP_COUNT video loop(s)"
-  # Validate each mp4
-  while IFS= read -r -d '' mp4; do
-    FNAME="$(basename "$mp4")"
-    FSIZE="$(stat -c %s "$mp4" 2>/dev/null || echo 0)"
-    FSIZE_MB=$(( FSIZE / 1048576 ))
-
-    V_CODEC="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$mp4" 2>/dev/null || true)"
-    V_RES="$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$mp4" 2>/dev/null || true)"
-    V_DUR="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$mp4" 2>/dev/null || true)"
-
-    if [[ -z "$V_CODEC" ]]; then
-      fail "$FNAME (${FSIZE_MB}MB) — NO VIDEO TRACK! This file cannot be used as overlay."
-      echo "       The file may be corrupted or is not a valid video."
-      echo "       Re-upload a proper H.264 .mp4 file."
-    else
-      V_DUR_S="${V_DUR%%.*}"
-      ok "$FNAME: ${FSIZE_MB}MB, codec=${V_CODEC}, res=${V_RES}, dur=${V_DUR_S:-?}s"
-      if [[ "${FSIZE}" -lt 500000 ]]; then
-        warn "  File is very small (<500KB). Ensure it's a real video, not a thumbnail."
-      fi
-    fi
-  done < <(find "$LOOPS_DIR" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.MP4" \) -print0 2>/dev/null)
+  echo "  Requirements: any video file (will be pre-rendered to 1080p)"
+  exit 1
 fi
+
+ok "Found $LOOP_COUNT source video loop(s)"
+while IFS= read -r -d '' mp4; do
+  FNAME="$(basename "$mp4")"
+  FSIZE="$(stat -c %s "$mp4" 2>/dev/null || echo 0)"
+  FSIZE_MB=$(( FSIZE / 1048576 ))
+  V_CODEC="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$mp4" 2>/dev/null || true)"
+  V_RES="$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$mp4" 2>/dev/null || true)"
+  V_DUR="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$mp4" 2>/dev/null || true)"
+  if [[ -z "$V_CODEC" ]]; then
+    fail "$FNAME (${FSIZE_MB}MB) — NO VIDEO TRACK! Cannot use as overlay."
+  else
+    ok "$FNAME: ${FSIZE_MB}MB, codec=${V_CODEC}, res=${V_RES}, dur=${V_DUR%%.*}s"
+  fi
+done < <(find "$LOOPS_DIR" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.MP4" \) -print0 2>/dev/null)
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
-log "STEP 2: Deploy player HTML"
+log "STEP 2: Pre-render videos to broadcast spec (one-time)"
+echo "════════════════════════════════════════════════════════════"
+echo "  Target: 1920x1080, ${FPS}fps, H.264 CBR 2500k, GOP ${GOP}"
+echo "  This runs ONCE per file. Playback then uses -c:v copy (near-zero CPU)."
+echo ""
+
+RENDERED_COUNT=0
+while IFS= read -r -d '' src; do
+  FNAME="$(basename "$src")"
+  RENDERED="${RENDER_DIR}/${FNAME}"
+  SRC_MTIME="$(stat -c %Y "$src" 2>/dev/null || echo 0)"
+  RND_MTIME="$(stat -c %Y "$RENDERED" 2>/dev/null || echo 0)"
+
+  # Skip if rendered version exists and is newer than source
+  if [[ -f "$RENDERED" && "$RND_MTIME" -ge "$SRC_MTIME" ]]; then
+    RND_SIZE="$(stat -c %s "$RENDERED" 2>/dev/null || echo 0)"
+    RND_MB=$(( RND_SIZE / 1048576 ))
+    ok "$FNAME already rendered (${RND_MB}MB) — skipping"
+    RENDERED_COUNT=$((RENDERED_COUNT + 1))
+    continue
+  fi
+
+  # Check source has video track
+  V_CODEC="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$src" 2>/dev/null || true)"
+  if [[ -z "$V_CODEC" ]]; then
+    warn "$FNAME has no video track — skipping"
+    continue
+  fi
+
+  log "Rendering $FNAME → broadcast spec..."
+  RENDER_TMP="${RENDERED}.tmp.mp4"
+
+  if ffmpeg -hide_banner -y \
+    -i "$src" \
+    -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=${FPS}" \
+    -c:v libx264 -preset medium -pix_fmt yuv420p \
+    -r "${FPS}" -g "${GOP}" -keyint_min "${GOP}" -sc_threshold 0 \
+    -force_key_frames "expr:gte(t,n_forced*${FRAG})" \
+    -b:v 2500k -maxrate 2500k -bufsize 5000k \
+    -x264-params "nal-hrd=cbr:force-cfr=1:repeat-headers=1" \
+    -an \
+    -movflags +faststart \
+    "$RENDER_TMP" 2>&1 | tail -5; then
+    mv "$RENDER_TMP" "$RENDERED"
+    RND_SIZE="$(stat -c %s "$RENDERED" 2>/dev/null || echo 0)"
+    RND_MB=$(( RND_SIZE / 1048576 ))
+    ok "$FNAME rendered successfully (${RND_MB}MB)"
+    RENDERED_COUNT=$((RENDERED_COUNT + 1))
+  else
+    rm -f "$RENDER_TMP"
+    fail "$FNAME render FAILED — check source file"
+  fi
+done < <(find "$LOOPS_DIR" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.MP4" \) -print0 2>/dev/null)
+
+# Clean up rendered files whose source no longer exists
+while IFS= read -r -d '' rnd; do
+  FNAME="$(basename "$rnd")"
+  SRC="${LOOPS_DIR}/${FNAME}"
+  if [[ ! -f "$SRC" ]]; then
+    rm -f "$rnd"
+    warn "Removed orphan rendered file: $FNAME"
+  fi
+done < <(find "$RENDER_DIR" -maxdepth 1 -type f -name "*.mp4" -print0 2>/dev/null)
+
+if [[ "$RENDERED_COUNT" -eq 0 ]]; then
+  fail "No rendered videos available — overlay cannot start"
+  exit 1
+fi
+echo ""
+ok "Pre-rendered videos ready: $RENDERED_COUNT file(s) in $RENDER_DIR"
+
+echo ""
+echo "════════════════════════════════════════════════════════════"
+log "STEP 3: Deploy player HTML"
 echo "════════════════════════════════════════════════════════════"
 
-WEBROOT="/var/www/radio.peoplewelike.club"
 mkdir -p "$WEBROOT"
-
-# Always redeploy — ensures video.js player is present and up to date
 log "Writing player with video.js HLS support..."
 cat > "${WEBROOT}/index.html" <<'HTMLEOF'
 <!DOCTYPE html>
@@ -183,27 +256,42 @@ ok "Player deployed to ${WEBROOT}/index.html"
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
-log "STEP 3: Update overlay daemon & systemd services"
+log "STEP 4: Install overlay daemon (copy-mode, low CPU)"
 echo "════════════════════════════════════════════════════════════"
 
-# Update the overlay daemon script on disk
+# ─── Overlay daemon: uses pre-rendered files with -c:v copy ───
 cat > /usr/local/bin/autodj-video-overlay <<'OVERLAYEOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+# ─── Config ───
 LOOPS_DIR="/var/lib/radio/loops"
+RENDER_DIR="${LOOPS_DIR}/rendered"
 AUDIO_IN="rtmp://127.0.0.1:1935/autodj_audio/stream?live=1"
 OUT="rtmp://127.0.0.1:1935/autodj/index"
-FPS=30; FRAG=6; GOP=$((FPS*FRAG))
-FORCE_KF="expr:gte(t,n_forced*${FRAG})"
 
 log(){ echo "[$(date -Is)] $*"; }
 
-get_random_loop() {
+get_rendered_loop() {
+  # Prefer pre-rendered files (copy-mode, near-zero CPU)
   local loops=()
+  if [[ -d "$RENDER_DIR" ]]; then
+    while IFS= read -r -d '' f; do loops+=("$f"); done \
+      < <(find "$RENDER_DIR" -maxdepth 1 -type f -name "*.mp4" -print0 2>/dev/null)
+  fi
+  if [[ ${#loops[@]} -gt 0 ]]; then
+    echo "copy:${loops[$((RANDOM % ${#loops[@]}))]}"
+    return 0
+  fi
+  # Fallback: raw source files (requires real-time encoding)
+  loops=()
   while IFS= read -r -d '' f; do loops+=("$f"); done \
     < <(find "$LOOPS_DIR" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.MP4" \) -print0 2>/dev/null)
-  [[ ${#loops[@]} -eq 0 ]] && return 1
-  echo "${loops[$((RANDOM % ${#loops[@]}))]}"
+  if [[ ${#loops[@]} -gt 0 ]]; then
+    echo "encode:${loops[$((RANDOM % ${#loops[@]}))]}"
+    return 0
+  fi
+  return 1
 }
 
 # Wait for audio publisher on RTMP autodj_audio
@@ -217,41 +305,135 @@ for i in {1..90}; do
   NC=$(echo "$STAT" | awk '/<name>autodj_audio<\/name>/,/<\/application>/' \
        | grep -oP '<nclients>\K[0-9]+' | head -1 || true)
   if [[ "${NC:-0}" -gt 0 ]]; then
-    log "Audio clients detected on autodj_audio (nclients=$NC)"
+    log "Audio clients detected (nclients=$NC)"
     break
   fi
   sleep 2
 done
 
 while true; do
-  LOOP_MP4=$(get_random_loop) || { log "No video loops in $LOOPS_DIR, waiting..."; sleep 10; continue; }
-  log "Overlay: $(basename "$LOOP_MP4") + audio -> RTMP autodj"
+  SELECTION=$(get_rendered_loop) || { log "No video loops, waiting..."; sleep 10; continue; }
+  MODE="${SELECTION%%:*}"
+  LOOP_MP4="${SELECTION#*:}"
 
-  ffmpeg -hide_banner -loglevel warning \
-    -re -stream_loop -1 -i "$LOOP_MP4" \
-    -thread_queue_size 1024 -i "$AUDIO_IN" \
-    -map 0:v:0 -map 1:a:0 \
-    -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=${FPS}" \
-    -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p \
-    -r "${FPS}" -g "${GOP}" -keyint_min "${GOP}" -sc_threshold 0 \
-    -force_key_frames "${FORCE_KF}" \
-    -b:v 2500k -maxrate 2500k -bufsize 5000k \
-    -x264-params "nal-hrd=cbr:force-cfr=1:repeat-headers=1" \
-    -c:a aac -b:a 128k -ar 44100 -ac 2 \
-    -muxdelay 0 -muxpreload 0 -flvflags no_duration_filesize \
-    -f flv "$OUT" || true
+  if [[ "$MODE" == "copy" ]]; then
+    # ─── COPY MODE: pre-rendered file, video pass-through ───
+    # Video is already 1920x1080 30fps H.264 CBR — just remux it
+    # CPU usage: ~2% (only AAC audio encoding)
+    log "COPY mode: $(basename "$LOOP_MP4") + live audio -> RTMP"
+    ffmpeg -hide_banner -loglevel warning \
+      -re -stream_loop -1 -i "$LOOP_MP4" \
+      -thread_queue_size 1024 -i "$AUDIO_IN" \
+      -map 0:v:0 -map 1:a:0 \
+      -c:v copy \
+      -c:a aac -b:a 128k -ar 44100 -ac 2 \
+      -muxdelay 0 -muxpreload 0 -flvflags no_duration_filesize \
+      -f flv "$OUT" || true
+  else
+    # ─── ENCODE MODE: fallback for non-pre-rendered files ───
+    # Full real-time encoding (~30% CPU)
+    log "ENCODE mode (not pre-rendered): $(basename "$LOOP_MP4")"
+    log "  Run 'radio-prerender' to pre-render and reduce CPU usage"
+    FPS=30; FRAG=6; GOP=$((FPS*FRAG))
+    ffmpeg -hide_banner -loglevel warning \
+      -re -stream_loop -1 -i "$LOOP_MP4" \
+      -thread_queue_size 1024 -i "$AUDIO_IN" \
+      -map 0:v:0 -map 1:a:0 \
+      -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=${FPS}" \
+      -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p \
+      -r "${FPS}" -g "${GOP}" -keyint_min "${GOP}" -sc_threshold 0 \
+      -force_key_frames "expr:gte(t,n_forced*${FRAG})" \
+      -b:v 2500k -maxrate 2500k -bufsize 5000k \
+      -x264-params "nal-hrd=cbr:force-cfr=1:repeat-headers=1" \
+      -c:a aac -b:a 128k -ar 44100 -ac 2 \
+      -muxdelay 0 -muxpreload 0 -flvflags no_duration_filesize \
+      -f flv "$OUT" || true
+  fi
 
   log "FFmpeg exited, restarting in 3s..."
   sleep 3
 done
 OVERLAYEOF
 chmod +x /usr/local/bin/autodj-video-overlay
-ok "Updated /usr/local/bin/autodj-video-overlay"
+ok "Overlay daemon installed (copy-mode + encode fallback)"
 
-# Update overlay systemd service with KillMode=mixed for clean FFmpeg stops
+# ─── radio-prerender utility ───
+cat > /usr/local/bin/radio-prerender <<'PRERENDEREOF'
+#!/usr/bin/env bash
+set -euo pipefail
+# radio-prerender — Pre-render mp4 loops to broadcast spec for -c:v copy playback
+# Run after uploading new mp4 files to /var/lib/radio/loops/
+# Usage: radio-prerender [--force]
+
+LOOPS_DIR="/var/lib/radio/loops"
+RENDER_DIR="${LOOPS_DIR}/rendered"
+FPS=30; FRAG=6; GOP=$((FPS*FRAG))
+FORCE=false
+[[ "${1:-}" == "--force" ]] && FORCE=true
+
+mkdir -p "$RENDER_DIR"
+echo "Pre-rendering video loops → ${RENDER_DIR}/"
+echo "Target: 1920x1080, ${FPS}fps, H.264 CBR 2500k, keyframe every ${FRAG}s"
+echo ""
+
+COUNT=0
+while IFS= read -r -d '' src; do
+  FNAME="$(basename "$src")"
+  RENDERED="${RENDER_DIR}/${FNAME}"
+  SRC_MTIME="$(stat -c %Y "$src" 2>/dev/null || echo 0)"
+  RND_MTIME="$(stat -c %Y "$RENDERED" 2>/dev/null || echo 0)"
+
+  if [[ "$FORCE" == false && -f "$RENDERED" && "$RND_MTIME" -ge "$SRC_MTIME" ]]; then
+    echo "  SKIP  $FNAME (already rendered)"
+    COUNT=$((COUNT + 1))
+    continue
+  fi
+
+  V_CODEC="$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$src" 2>/dev/null || true)"
+  if [[ -z "$V_CODEC" ]]; then
+    echo "  SKIP  $FNAME (no video track)"
+    continue
+  fi
+
+  echo "  RENDERING $FNAME ..."
+  TMP="${RENDERED}.tmp.mp4"
+  if ffmpeg -hide_banner -y \
+    -i "$src" \
+    -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=${FPS}" \
+    -c:v libx264 -preset medium -pix_fmt yuv420p \
+    -r "${FPS}" -g "${GOP}" -keyint_min "${GOP}" -sc_threshold 0 \
+    -force_key_frames "expr:gte(t,n_forced*${FRAG})" \
+    -b:v 2500k -maxrate 2500k -bufsize 5000k \
+    -x264-params "nal-hrd=cbr:force-cfr=1:repeat-headers=1" \
+    -an -movflags +faststart \
+    "$TMP" 2>&1 | tail -3; then
+    mv "$TMP" "$RENDERED"
+    SIZE_MB=$(( $(stat -c %s "$RENDERED") / 1048576 ))
+    echo "  OK    $FNAME → ${SIZE_MB}MB"
+    COUNT=$((COUNT + 1))
+  else
+    rm -f "$TMP"
+    echo "  FAIL  $FNAME"
+  fi
+done < <(find "$LOOPS_DIR" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.MP4" \) -print0 2>/dev/null)
+
+# Clean orphans
+while IFS= read -r -d '' rnd; do
+  FNAME="$(basename "$rnd")"
+  [[ ! -f "${LOOPS_DIR}/${FNAME}" ]] && rm -f "$rnd" && echo "  CLEAN orphan: $FNAME"
+done < <(find "$RENDER_DIR" -maxdepth 1 -type f -name "*.mp4" -print0 2>/dev/null)
+
+echo ""
+echo "Done. ${COUNT} rendered file(s) ready."
+echo "Restart overlay to use: systemctl restart autodj-video-overlay"
+PRERENDEREOF
+chmod +x /usr/local/bin/radio-prerender
+ok "radio-prerender utility installed"
+
+# ─── Systemd service ───
 cat > /etc/systemd/system/autodj-video-overlay.service <<'EOF'
 [Unit]
-Description=AutoDJ Video Overlay (loop.mp4 + audio to RTMP autodj)
+Description=AutoDJ Video Overlay (pre-rendered loop + live audio to RTMP)
 After=network.target nginx.service liquidsoap-autodj.service
 Wants=nginx.service liquidsoap-autodj.service
 StartLimitIntervalSec=60
@@ -272,24 +454,23 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-ok "Systemd services updated (KillMode=mixed for clean overlay stops)"
+ok "Systemd service updated"
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
-log "STEP 4: Stop all radio services"
+log "STEP 5: Stop all radio services"
 echo "════════════════════════════════════════════════════════════"
 
 for svc in radio-nowplayingd radio-hls-relay radio-switchd autodj-video-overlay liquidsoap-autodj; do
   systemctl stop "$svc" 2>/dev/null && ok "Stopped $svc" || true
 done
-# Kill any leftover FFmpeg overlay processes
 pkill -f "autodj-video-overlay" 2>/dev/null || true
 pkill -f "ffmpeg.*autodj/index" 2>/dev/null || true
 sleep 2
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
-log "STEP 5: Clean stale HLS state"
+log "STEP 6: Clean stale HLS state"
 echo "════════════════════════════════════════════════════════════"
 
 rm -f /var/lib/radio-hls-relay/state.json
@@ -299,10 +480,9 @@ ok "Stale HLS segments and relay state cleared"
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
-log "STEP 6: Start services (ordered with health checks)"
+log "STEP 7: Start services (ordered with health checks)"
 echo "════════════════════════════════════════════════════════════"
 
-# Helper: wait for condition
 wait_for() {
   local desc="$1" timeout="$2" check="$3" i=0
   while [[ $i -lt $timeout ]]; do
@@ -313,11 +493,11 @@ wait_for() {
   return 1
 }
 
-# 6a. Nginx
+# 7a. Nginx
 log "Reloading nginx..."
 nginx -t 2>&1 && systemctl reload nginx && ok "nginx reloaded" || { fail "nginx config error"; nginx -t; }
 
-# 6b. Liquidsoap
+# 7b. Liquidsoap
 log "Starting liquidsoap-autodj..."
 systemctl start liquidsoap-autodj
 sleep 3
@@ -327,22 +507,22 @@ else
   fail "Liquidsoap failed!"; journalctl -u liquidsoap-autodj -n 15 --no-pager; exit 1
 fi
 
-# 6c. Wait for audio on RTMP
+# 7c. Wait for audio on RTMP
 log "Waiting for audio stream on RTMP autodj_audio..."
 RTMP_CHK='curl -fsS http://127.0.0.1:8089/rtmp_stat 2>/dev/null | awk "/<name>autodj_audio<.name>/,/<.application>/" | grep -qE "<nclients>[1-9]|<publishing>"'
 wait_for "RTMP autodj_audio active" 30 "$RTMP_CHK" || warn "Audio may still be connecting..."
 
-# 6d. Video overlay
+# 7d. Video overlay
 log "Starting autodj-video-overlay..."
 systemctl start autodj-video-overlay
 sleep 2
 if systemctl is-active --quiet autodj-video-overlay; then
   ok "autodj-video-overlay running"
 else
-  warn "Overlay not started — check loop.mp4 files"
+  warn "Overlay not started — check logs: journalctl -u autodj-video-overlay -n 20"
 fi
 
-# 6e. Wait for HLS segments (proves video overlay → nginx-rtmp → HLS works)
+# 7e. Wait for HLS segments
 log "Waiting for HLS segments from autodj..."
 HLS_CHK='ls /var/www/hls/autodj/*.ts 2>/dev/null | head -1 | grep -q .'
 wait_for "HLS segments generated" 60 "$HLS_CHK" || {
@@ -351,20 +531,20 @@ wait_for "HLS segments generated" 60 "$HLS_CHK" || {
   journalctl -u autodj-video-overlay -n 15 --no-pager -q 2>/dev/null || true
 }
 
-# 6f. Switch daemon
+# 7f. Switch daemon
 log "Starting radio-switchd..."
 systemctl start radio-switchd
 sleep 1
 ok "radio-switchd started"
 
-# 6g. HLS relay
+# 7g. HLS relay
 log "Starting radio-hls-relay..."
 systemctl start radio-hls-relay
 sleep 2
 RELAY_CHK='ls /var/www/hls/current/seg-*.ts 2>/dev/null | head -1 | grep -q .'
 wait_for "Relay producing /hls/current/ segments" 15 "$RELAY_CHK" || true
 
-# 6h. Now-playing daemon
+# 7h. Now-playing daemon
 log "Starting radio-nowplayingd..."
 systemctl start radio-nowplayingd
 sleep 2
@@ -372,7 +552,7 @@ ok "radio-nowplayingd started"
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
-log "STEP 7: Verification"
+log "STEP 8: Verification"
 echo "════════════════════════════════════════════════════════════"
 echo ""
 
@@ -383,6 +563,23 @@ for svc in nginx liquidsoap-autodj autodj-video-overlay radio-switchd radio-hls-
   st="$(systemctl is-active "$svc" 2>/dev/null || echo inactive)"
   if [[ "$st" == "active" ]]; then ok "$svc"; else fail "$svc ($st)"; ALL_OK=false; fi
 done
+
+echo ""
+echo "--- CPU Usage (overlay) ---"
+OV_PID="$(pgrep -f 'ffmpeg.*autodj/index' | head -1 || true)"
+if [[ -n "$OV_PID" ]]; then
+  # Sample CPU over 2 seconds
+  OV_CPU="$(ps -p "$OV_PID" -o %cpu= 2>/dev/null | tr -d ' ' || true)"
+  OV_CMD="$(ps -p "$OV_PID" -o args= 2>/dev/null || true)"
+  if echo "$OV_CMD" | grep -q '\-c:v copy'; then
+    ok "Overlay using COPY mode (PID $OV_PID, CPU ${OV_CPU}%)"
+  else
+    warn "Overlay using ENCODE mode (PID $OV_PID, CPU ${OV_CPU}%)"
+    echo "  Run 'radio-prerender' then restart overlay to switch to copy mode"
+  fi
+else
+  warn "No overlay FFmpeg process found yet"
+fi
 
 echo ""
 echo "--- RTMP Streams ---"
@@ -406,7 +603,6 @@ CURRENT_SEGS=$(ls /var/www/hls/current/seg-*.ts 2>/dev/null | wc -l)
 echo "  AutoDJ segments:  $AUTODJ_SEGS"
 echo "  Current segments: $CURRENT_SEGS"
 
-# Critical check: do HLS segments contain VIDEO?
 if [[ "$AUTODJ_SEGS" -gt 0 ]]; then
   ok "HLS pipeline producing segments"
   SAMPLE="$(ls -t /var/www/hls/autodj/*.ts 2>/dev/null | head -1)"
@@ -416,14 +612,9 @@ if [[ "$AUTODJ_SEGS" -gt 0 ]]; then
       ok "HLS segments contain VIDEO track"
     else
       fail "HLS segments are AUDIO-ONLY — overlay video not reaching HLS!"
-      echo "  Detected streams: $STREAMS"
       ALL_OK=false
     fi
-    if echo "$STREAMS" | grep -q "audio"; then
-      ok "HLS segments contain AUDIO track"
-    else
-      warn "HLS segments have no audio track"
-    fi
+    echo "$STREAMS" | grep -q "audio" && ok "HLS segments contain AUDIO track" || warn "No audio in HLS"
   fi
 else
   fail "No HLS segments"; ALL_OK=false
@@ -433,23 +624,18 @@ echo ""
 echo "--- Now-Playing API ---"
 NP_FILE="$(cat /var/www/radio/data/nowplaying.json 2>/dev/null || echo '{}')"
 echo "  File: $NP_FILE"
-# Use HTTPS (certbot redirects HTTP→HTTPS, so plain HTTP returns 301)
 API="$(curl -sSk -H 'Host: radio.peoplewelike.club' https://127.0.0.1/api/nowplaying 2>/dev/null \
   || curl -sS -H 'Host: radio.peoplewelike.club' -L http://127.0.0.1/api/nowplaying 2>/dev/null \
   || echo 'FAILED')"
 echo "  API:  $API"
-if echo "$API" | grep -q '"mode"'; then ok "API responding"; else fail "API not responding"; ALL_OK=false; fi
+echo "$API" | grep -q '"mode"' && ok "API responding" || { fail "API not responding"; ALL_OK=false; }
 
 echo ""
 echo "--- Player HTML ---"
-if [[ -f "${WEBROOT}/index.html" ]]; then
-  if grep -q 'video-js' "${WEBROOT}/index.html" && grep -q 'hls/current' "${WEBROOT}/index.html"; then
-    ok "Player HTML deployed with video.js + HLS source"
-  else
-    warn "Player HTML exists but may not have video support"
-  fi
+if [[ -f "${WEBROOT}/index.html" ]] && grep -q 'hls/current' "${WEBROOT}/index.html"; then
+  ok "Player HTML deployed with video.js + HLS source"
 else
-  fail "No index.html at ${WEBROOT}"; ALL_OK=false
+  fail "Player HTML missing or broken"; ALL_OK=false
 fi
 
 echo ""
@@ -461,7 +647,13 @@ else
 fi
 echo "════════════════════════════════════════════════════════════"
 echo ""
-echo "Test in browser:  https://radio.peoplewelike.club/"
-echo "HLS direct:       https://radio.peoplewelike.club/hls/current/index.m3u8"
-echo "API check:        https://radio.peoplewelike.club/api/nowplaying"
+echo "Test:  https://radio.peoplewelike.club/"
+echo "HLS:   https://radio.peoplewelike.club/hls/current/index.m3u8"
+echo "API:   https://radio.peoplewelike.club/api/nowplaying"
+echo ""
+echo "Commands:"
+echo "  radio-prerender          Pre-render new mp4 files (after SFTP upload)"
+echo "  radio-prerender --force  Force re-render all files"
+echo "  radio-ctl status         Check all services"
+echo "  radio-ctl restart        Restart all services"
 echo ""

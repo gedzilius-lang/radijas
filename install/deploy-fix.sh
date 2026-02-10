@@ -250,24 +250,39 @@ echo "$DIVIDER"
 log "PHASE 4: Daemon scripts"
 echo "$DIVIDER"
 
-# ─── 4a. autodj-video-overlay ───
+# ─── 4a. autodj-video-overlay (copy-mode for pre-rendered, encode fallback) ───
 cat > /usr/local/bin/autodj-video-overlay <<'OVERLAYEOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+# ─── Config ───
 LOOPS_DIR="/var/lib/radio/loops"
+RENDER_DIR="${LOOPS_DIR}/rendered"
 AUDIO_IN="rtmp://127.0.0.1:1935/autodj_audio/stream?live=1"
 OUT="rtmp://127.0.0.1:1935/autodj/index"
-FPS=30; FRAG=6; GOP=$((FPS*FRAG))
-FORCE_KF="expr:gte(t,n_forced*${FRAG})"
 
 log(){ echo "[$(date -Is)] $*"; }
 
-get_random_loop() {
+get_rendered_loop() {
+  # Prefer pre-rendered files (copy-mode, near-zero CPU)
   local loops=()
+  if [[ -d "$RENDER_DIR" ]]; then
+    while IFS= read -r -d '' f; do loops+=("$f"); done \
+      < <(find "$RENDER_DIR" -maxdepth 1 -type f -name "*.mp4" -print0 2>/dev/null)
+  fi
+  if [[ ${#loops[@]} -gt 0 ]]; then
+    echo "copy:${loops[$((RANDOM % ${#loops[@]}))]}"
+    return 0
+  fi
+  # Fallback: raw source files (requires real-time encoding)
+  loops=()
   while IFS= read -r -d '' f; do loops+=("$f"); done \
     < <(find "$LOOPS_DIR" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.MP4" \) -print0 2>/dev/null)
-  [[ ${#loops[@]} -eq 0 ]] && return 1
-  echo "${loops[$((RANDOM % ${#loops[@]}))]}"
+  if [[ ${#loops[@]} -gt 0 ]]; then
+    echo "encode:${loops[$((RANDOM % ${#loops[@]}))]}"
+    return 0
+  fi
+  return 1
 }
 
 # Wait for an active RTMP publisher on autodj_audio (not just config presence)
@@ -278,33 +293,49 @@ for i in {1..90}; do
     log "Audio publisher detected on autodj_audio"
     break
   fi
-  # Fallback: check nclients > 0 (covers various nginx-rtmp stat formats)
   NC=$(echo "$STAT" | awk '/<name>autodj_audio<\/name>/,/<\/application>/' \
        | grep -oP '<nclients>\K[0-9]+' | head -1 || true)
   if [[ "${NC:-0}" -gt 0 ]]; then
-    log "Audio clients detected on autodj_audio (nclients=$NC)"
+    log "Audio clients detected (nclients=$NC)"
     break
   fi
   sleep 2
 done
 
 while true; do
-  LOOP_MP4=$(get_random_loop) || { log "No video loops in $LOOPS_DIR, waiting..."; sleep 10; continue; }
-  log "Overlay: $(basename "$LOOP_MP4") + audio → RTMP autodj"
+  SELECTION=$(get_rendered_loop) || { log "No video loops, waiting..."; sleep 10; continue; }
+  MODE="${SELECTION%%:*}"
+  LOOP_MP4="${SELECTION#*:}"
 
-  ffmpeg -hide_banner -loglevel warning \
-    -re -stream_loop -1 -i "$LOOP_MP4" \
-    -thread_queue_size 1024 -i "$AUDIO_IN" \
-    -map 0:v:0 -map 1:a:0 \
-    -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=${FPS}" \
-    -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p \
-    -r "${FPS}" -g "${GOP}" -keyint_min "${GOP}" -sc_threshold 0 \
-    -force_key_frames "${FORCE_KF}" \
-    -b:v 2500k -maxrate 2500k -bufsize 5000k \
-    -x264-params "nal-hrd=cbr:force-cfr=1:repeat-headers=1" \
-    -c:a aac -b:a 128k -ar 44100 -ac 2 \
-    -muxdelay 0 -muxpreload 0 -flvflags no_duration_filesize \
-    -f flv "$OUT" || true
+  if [[ "$MODE" == "copy" ]]; then
+    # COPY MODE: pre-rendered file, video pass-through (~2% CPU)
+    log "COPY mode: $(basename "$LOOP_MP4") + live audio -> RTMP"
+    ffmpeg -hide_banner -loglevel warning \
+      -re -stream_loop -1 -i "$LOOP_MP4" \
+      -thread_queue_size 1024 -i "$AUDIO_IN" \
+      -map 0:v:0 -map 1:a:0 \
+      -c:v copy \
+      -c:a aac -b:a 128k -ar 44100 -ac 2 \
+      -muxdelay 0 -muxpreload 0 -flvflags no_duration_filesize \
+      -f flv "$OUT" || true
+  else
+    # ENCODE MODE: fallback for non-pre-rendered files (~30% CPU)
+    log "ENCODE mode (not pre-rendered): $(basename "$LOOP_MP4")"
+    FPS=30; FRAG=6; GOP=$((FPS*FRAG))
+    ffmpeg -hide_banner -loglevel warning \
+      -re -stream_loop -1 -i "$LOOP_MP4" \
+      -thread_queue_size 1024 -i "$AUDIO_IN" \
+      -map 0:v:0 -map 1:a:0 \
+      -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=${FPS}" \
+      -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p \
+      -r "${FPS}" -g "${GOP}" -keyint_min "${GOP}" -sc_threshold 0 \
+      -force_key_frames "expr:gte(t,n_forced*${FRAG})" \
+      -b:v 2500k -maxrate 2500k -bufsize 5000k \
+      -x264-params "nal-hrd=cbr:force-cfr=1:repeat-headers=1" \
+      -c:a aac -b:a 128k -ar 44100 -ac 2 \
+      -muxdelay 0 -muxpreload 0 -flvflags no_duration_filesize \
+      -f flv "$OUT" || true
+  fi
 
   log "FFmpeg exited, restarting in 3s..."
   sleep 3
