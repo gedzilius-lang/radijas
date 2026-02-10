@@ -56,7 +56,7 @@ ok "FFmpeg: $(ffmpeg -version 2>&1 | head -1 | awk '{print $3}')"
 if ! command -v nginx &>/dev/null; then
   fail "nginx not installed. Run: apt install -y nginx libnginx-mod-rtmp"; exit 1
 fi
-if nginx -V 2>&1 | grep -q rtmp; then
+if nginx -V 2>&1 | grep -q rtmp || dpkg -l libnginx-mod-rtmp 2>/dev/null | grep -q '^ii'; then
   ok "nginx with RTMP module"
 else
   warn "nginx RTMP module may not be loaded — install libnginx-mod-rtmp"
@@ -1257,7 +1257,9 @@ echo ""
 echo "--- Now-Playing API ---"
 NP_JSON="$(cat /var/www/radio/data/nowplaying.json 2>/dev/null || echo '{}')"
 echo "  File: $NP_JSON"
-API_JSON="$(curl -sS -H 'Host: radio.peoplewelike.club' http://127.0.0.1/api/nowplaying 2>/dev/null || echo 'FAILED')"
+API_JSON="$(curl -sSk -H 'Host: radio.peoplewelike.club' https://127.0.0.1/api/nowplaying 2>/dev/null \
+  || curl -sS -H 'Host: radio.peoplewelike.club' -L http://127.0.0.1/api/nowplaying 2>/dev/null \
+  || echo 'FAILED')"
 echo "  API:  $API_JSON"
 if echo "$API_JSON" | grep -q '"mode"'; then ok "API responding"; else fail "API not responding"; ALL_OK=false; fi
 
