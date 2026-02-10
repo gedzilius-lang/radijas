@@ -466,6 +466,7 @@ set -euo pipefail
 ACTIVE="/run/radio/active"
 LOGF="/var/log/liquidsoap/radio.log"
 OUT="/var/www/radio/data/nowplaying.json"
+OUT2="/var/www/radio/data/nowplaying"
 
 mkdir -p "$(dirname "$OUT")"
 
@@ -476,6 +477,7 @@ write_json() {
   printf '{"mode":"%s","artist":"%s","title":"%s","updated":"%s"}\n' \
     "$mode" "$artist" "$title" "$ts" > "${OUT}.tmp"
   mv "${OUT}.tmp" "$OUT" || true
+  cp "$OUT" "$OUT2" 2>/dev/null || true
 }
 
 # Extract artist/title from a filename (without path or extension)

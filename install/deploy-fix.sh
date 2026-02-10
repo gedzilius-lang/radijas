@@ -241,7 +241,7 @@ cat > /usr/local/bin/autodj-video-overlay <<'OVERLAYEOF'
 #!/usr/bin/env bash
 set -euo pipefail
 LOOPS_DIR="/var/lib/radio/loops"
-AUDIO_IN="rtmp://127.0.0.1:1935/autodj_audio/stream"
+AUDIO_IN="rtmp://127.0.0.1:1935/autodj_audio/stream?live=1"
 OUT="rtmp://127.0.0.1:1935/autodj/index"
 FPS=30; FRAG=6; GOP=$((FPS*FRAG))
 FORCE_KF="expr:gte(t,n_forced*${FRAG})"

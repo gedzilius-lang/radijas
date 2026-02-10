@@ -174,10 +174,17 @@ server {
         }
     }
 
-    # API endpoints (nowplaying.json, status.json)
+    # API: exact match for /api/nowplaying (player fetches without .json)
+    location = /api/nowplaying {
+        alias /var/www/radio/data/nowplaying;
+        default_type application/json;
+        add_header Cache-Control "no-cache, no-store";
+        add_header Access-Control-Allow-Origin *;
+    }
+    # API: prefix match for /api/*.json
     location /api/ {
         alias /var/www/radio/data/;
-        add_header Content-Type application/json;
+        default_type application/json;
         add_header Cache-Control "no-cache, no-store";
         add_header Access-Control-Allow-Origin *;
     }
