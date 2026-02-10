@@ -147,11 +147,14 @@ scheduled = fallback(track_sensitive=false, [monday, tuesday, wednesday, thursda
 radio = crossfade(duration=3.0, scheduled)
 radio = normalize(radio)
 
-# ─── Output (no custom metadata callback — parsed from log by radio-nowplayingd) ───
-output.url(
+# ─── Output via external FFmpeg to RTMP ───
+# output.url with %ffmpeg silently fails in Liquidsoap 2.0.2.
+# Pipe WAV to external ffmpeg which encodes AAC and pushes to RTMP.
+output.external(
+  %wav,
+  id="rtmp_out",
   fallible=true,
-  url="rtmp://127.0.0.1:1935/autodj_audio/stream",
-  %ffmpeg(format="flv", %audio(codec="aac", b="128k", ar=44100, channels=2)),
+  "ffmpeg -hide_banner -loglevel warning -nostdin -f wav -i pipe:0 -c:a aac -b:a 128k -ar 44100 -ac 2 -f flv rtmp://127.0.0.1:1935/autodj_audio/stream",
   radio
 )
 LIQEOF
