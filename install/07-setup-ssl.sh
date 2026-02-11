@@ -39,6 +39,9 @@ echo "  - stream.peoplewelike.club"
 echo "  - ingest.peoplewelike.club"
 echo ""
 
+# Use EMAIL from environment or default
+CERTBOT_EMAIL="${CERTBOT_EMAIL:-${EMAIL:-admin@peoplewelike.club}}"
+
 # Run certbot
 certbot --nginx \
     -d radio.peoplewelike.club \
@@ -46,7 +49,7 @@ certbot --nginx \
     -d ingest.peoplewelike.club \
     --non-interactive \
     --agree-tos \
-    --email admin@peoplewelike.club \
+    --email "$CERTBOT_EMAIL" \
     --redirect \
     --keep-until-expiring
 

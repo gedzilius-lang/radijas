@@ -1,0 +1,44 @@
+{
+  "monday": {
+    "morning": {"time":"06:00 – 10:00","title":"Morning Program","description":"Start your week with curated selections","dj":""},
+    "day": {"time":"10:00 – 18:00","title":"Daytime","description":"Smooth afternoon programming","dj":""},
+    "evening": {"time":"18:00 – 22:00","title":"Evening Session","description":"Prime time selections","dj":""},
+    "night": {"time":"22:00 – 06:00","title":"Late Night","description":"After hours deep cuts","dj":""}
+  },
+  "tuesday": {
+    "morning": {"time":"06:00 – 10:00","title":"Morning Program","description":"Early selections","dj":""},
+    "day": {"time":"10:00 – 18:00","title":"Daytime","description":"Afternoon programming","dj":""},
+    "evening": {"time":"18:00 – 22:00","title":"Evening Session","description":"Prime time","dj":""},
+    "night": {"time":"22:00 – 06:00","title":"Late Night","description":"After hours","dj":""}
+  },
+  "wednesday": {
+    "morning": {"time":"06:00 – 10:00","title":"Morning Program","description":"Midweek morning","dj":""},
+    "day": {"time":"10:00 – 18:00","title":"Daytime","description":"Afternoon selections","dj":""},
+    "evening": {"time":"18:00 – 22:00","title":"Evening Session","description":"Prime time","dj":""},
+    "night": {"time":"22:00 – 06:00","title":"Late Night","description":"After hours","dj":""}
+  },
+  "thursday": {
+    "morning": {"time":"06:00 – 10:00","title":"Morning Program","description":"Thursday morning","dj":""},
+    "day": {"time":"10:00 – 18:00","title":"Daytime","description":"Afternoon programming","dj":""},
+    "evening": {"time":"18:00 – 22:00","title":"Evening Session","description":"Prime time","dj":""},
+    "night": {"time":"22:00 – 06:00","title":"Late Night","description":"After hours","dj":""}
+  },
+  "friday": {
+    "morning": {"time":"06:00 – 10:00","title":"Morning Program","description":"Friday morning","dj":""},
+    "day": {"time":"10:00 – 18:00","title":"Daytime","description":"Afternoon selections","dj":""},
+    "evening": {"time":"18:00 – 22:00","title":"Friday Evening","description":"Weekend warmup","dj":""},
+    "night": {"time":"22:00 – 06:00","title":"Friday Night","description":"Weekend begins","dj":""}
+  },
+  "saturday": {
+    "morning": {"time":"06:00 – 10:00","title":"Morning Program","description":"Weekend morning","dj":""},
+    "day": {"time":"10:00 – 18:00","title":"Daytime","description":"Saturday afternoon","dj":""},
+    "evening": {"time":"18:00 – 22:00","title":"Saturday Evening","description":"Weekend prime time","dj":""},
+    "night": {"time":"22:00 – 06:00","title":"Saturday Night","description":"Peak hours","dj":""}
+  },
+  "sunday": {
+    "morning": {"time":"06:00 – 10:00","title":"Morning Program","description":"Sunday morning","dj":""},
+    "day": {"time":"10:00 – 18:00","title":"Daytime","description":"Sunday afternoon","dj":""},
+    "evening": {"time":"18:00 – 22:00","title":"Sunday Evening","description":"Winding down","dj":""},
+    "night": {"time":"22:00 – 06:00","title":"Sunday Night","description":"Into the new week","dj":""}
+  }
+}

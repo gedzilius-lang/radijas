@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect width="1920" height="1080" fill="#050505"/>
+  <circle cx="300" cy="900" r="400" fill="#7c3aed" opacity="0.03"/>
+  <circle cx="1600" cy="150" r="300" fill="#7c3aed" opacity="0.03"/>
+  <text x="960" y="490" text-anchor="middle" font-family="Arial,Helvetica,sans-serif"
+        font-size="68" font-weight="bold" fill="#d4d4d4">People We <tspan fill="#7c3aed">Like</tspan></text>
+  <text x="960" y="570" text-anchor="middle" font-family="Arial,Helvetica,sans-serif"
+        font-size="28" fill="#404040" letter-spacing="10">RADIO</text>
+</svg>

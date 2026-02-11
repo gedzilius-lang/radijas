@@ -19,341 +19,333 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>People We Like Radio</title>
-
-    <!-- Video.js CSS -->
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet">
-
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d0d14;
             min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             color: #fff;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         }
 
-        .container {
+        .player-wrap {
+            width: 100%;
             max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+            padding: clamp(10px, 3vw, 30px);
         }
 
-        header {
+        h1 {
             text-align: center;
-            padding: 40px 20px;
+            font-size: clamp(1.1em, 4vw, 1.8em);
+            font-weight: 400;
+            margin-bottom: clamp(12px, 3vw, 24px);
+            color: #a78bfa;
         }
 
-        header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            background: linear-gradient(90deg, #e94560, #f39c12);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        header p {
-            color: #a0a0a0;
-            font-size: 1.1em;
-        }
-
-        .player-container {
-            max-width: 960px;
-            margin: 0 auto;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 16px;
+        .video-container {
+            position: relative;
+            background: #1a1a24;
+            border-radius: clamp(8px, 2vw, 16px);
             overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 60px rgba(167, 139, 250, 0.15);
         }
 
         .video-js {
             width: 100%;
+            height: auto;
             aspect-ratio: 16/9;
         }
 
-        .now-playing {
-            padding: 20px 30px;
-            background: rgba(0, 0, 0, 0.4);
-            display: flex;
-            align-items: center;
-            gap: 20px;
+        /* Video.js purple theme */
+        .video-js .vjs-big-play-button {
+            background: rgba(167, 139, 250, 0.9);
+            border: none;
+            border-radius: 50%;
+            width: clamp(50px, 12vw, 80px);
+            height: clamp(50px, 12vw, 80px);
+            line-height: clamp(50px, 12vw, 80px);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: clamp(1.5em, 4vw, 2em);
+        }
+        .video-js .vjs-big-play-button:hover,
+        .video-js .vjs-big-play-button:focus {
+            background: #a78bfa;
+        }
+        .video-js .vjs-control-bar {
+            background: rgba(13, 13, 20, 0.95);
+            height: clamp(35px, 8vw, 45px);
+        }
+        .video-js .vjs-play-progress,
+        .video-js .vjs-volume-level {
+            background: #a78bfa;
+        }
+        .video-js .vjs-slider {
+            background: rgba(167, 139, 250, 0.3);
+        }
+        .video-js .vjs-time-control {
+            font-size: clamp(0.7em, 2vw, 1em);
+            padding: 0 0.5em;
+            min-width: auto;
         }
 
-        .now-playing-icon {
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, #e94560, #f39c12);
-            border-radius: 12px;
+        .now-playing {
+            display: flex;
+            align-items: center;
+            gap: clamp(8px, 2vw, 16px);
+            padding: clamp(12px, 3vw, 20px);
+            background: #13131a;
+            border-top: 1px solid #252530;
+        }
+
+        .np-icon {
+            width: clamp(36px, 8vw, 48px);
+            height: clamp(36px, 8vw, 48px);
+            background: linear-gradient(135deg, #7c3aed, #a78bfa);
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 24px;
+            font-size: clamp(1em, 3vw, 1.4em);
             flex-shrink: 0;
         }
 
-        .now-playing-info {
-            flex-grow: 1;
+        .np-info {
+            flex: 1;
             min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
         }
 
-        .now-playing-label {
-            font-size: 0.75em;
+        .np-label {
+            font-size: clamp(0.65em, 1.8vw, 0.75em);
             text-transform: uppercase;
-            letter-spacing: 2px;
-            color: #888;
-            margin-bottom: 4px;
+            letter-spacing: 1px;
+            color: #6b7280;
         }
 
-        .now-playing-title {
-            font-size: 1.3em;
-            font-weight: 600;
-            white-space: nowrap;
+        .np-title {
+            font-size: clamp(0.9em, 2.5vw, 1.1em);
+            font-weight: 500;
+            color: #fff;
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .now-playing-artist {
-            font-size: 1em;
-            color: #a0a0a0;
-            white-space: nowrap;
+        .np-artist {
+            font-size: clamp(0.8em, 2vw, 0.95em);
+            color: #9ca3af;
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .status-badge {
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 0.8em;
+        .np-status {
+            padding: clamp(4px, 1vw, 6px) clamp(8px, 2vw, 12px);
+            border-radius: 4px;
+            font-size: clamp(0.6em, 1.5vw, 0.7em);
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 1px;
+            background: #7c3aed;
+            flex-shrink: 0;
+            align-self: flex-start;
         }
-
-        .status-badge.live {
-            background: #e94560;
+        .np-status.live {
+            background: #dc2626;
             animation: pulse 2s infinite;
         }
-
-        .status-badge.autodj {
-            background: #3498db;
-        }
-
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
+            50% { opacity: 0.6; }
         }
 
-        .controls {
-            padding: 20px 30px;
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-        }
-
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 1em;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #e94560, #f39c12);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(233, 69, 96, 0.3);
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        footer {
-            text-align: center;
-            padding: 40px 20px;
-            color: #666;
-            font-size: 0.9em;
-        }
-
-        footer a {
-            color: #e94560;
-            text-decoration: none;
-        }
-
-        @media (max-width: 600px) {
-            header h1 {
-                font-size: 1.8em;
+        /* Tablet */
+        @media (max-width: 768px) {
+            .now-playing {
+                flex-wrap: wrap;
             }
+            .np-status {
+                order: -1;
+                margin-bottom: 4px;
+            }
+        }
 
+        /* Mobile */
+        @media (max-width: 480px) {
+            body {
+                justify-content: flex-start;
+                padding-top: clamp(20px, 5vh, 60px);
+            }
             .now-playing {
                 flex-direction: column;
-                text-align: center;
+                align-items: flex-start;
+                gap: 8px;
             }
-
-            .now-playing-info {
+            .np-icon {
+                display: none;
+            }
+            .np-info {
                 width: 100%;
+            }
+            .np-title, .np-artist {
+                white-space: normal;
+                word-break: break-word;
+            }
+        }
+
+        /* Landscape mobile */
+        @media (max-height: 500px) and (orientation: landscape) {
+            body {
+                justify-content: center;
+            }
+            h1 {
+                margin-bottom: 8px;
+                font-size: 1em;
+            }
+            .player-wrap {
+                max-width: 90vh;
             }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>People We Like Radio</h1>
-            <p>24/7 Music & Live Shows</p>
-        </header>
-
-        <div class="player-container">
+    <div class="player-wrap">
+        <h1>People We Like Radio</h1>
+        <div class="video-container">
             <video
-                id="radio-player"
-                class="video-js vjs-big-play-centered vjs-theme-fantasy"
+                id="player"
+                class="video-js vjs-big-play-centered"
                 controls
+                playsinline
                 preload="auto"
-                poster="/poster.jpg"
-                data-setup='{}'>
+                poster="/poster.jpg">
                 <source src="/hls/current/index.m3u8" type="application/x-mpegURL">
-                <p class="vjs-no-js">
-                    To view this video please enable JavaScript, and consider upgrading to a
-                    web browser that supports HTML5 video.
-                </p>
             </video>
-
             <div class="now-playing">
-                <div class="now-playing-icon">🎵</div>
-                <div class="now-playing-info">
-                    <div class="now-playing-label" id="np-label">Now Playing</div>
-                    <div class="now-playing-title" id="np-title">Loading...</div>
-                    <div class="now-playing-artist" id="np-artist"></div>
+                <div class="np-icon">&#9835;</div>
+                <div class="np-info">
+                    <div class="np-label" id="np-label">Now Playing</div>
+                    <div class="np-title" id="np-title">Ready to play</div>
+                    <div class="np-artist" id="np-artist"></div>
                 </div>
-                <div class="status-badge autodj" id="status-badge">AutoDJ</div>
-            </div>
-
-            <div class="controls">
-                <button class="btn btn-primary" id="btn-play">▶ Play</button>
-                <button class="btn btn-secondary" id="btn-mute">🔊 Mute</button>
-                <button class="btn btn-secondary" id="btn-fullscreen">⛶ Fullscreen</button>
+                <div class="np-status" id="np-status">Program</div>
             </div>
         </div>
-
-        <footer>
-            <p>&copy; 2024 People We Like Radio |
-               <a href="https://peoplewelike.club">peoplewelike.club</a>
-            </p>
-        </footer>
     </div>
 
-    <!-- Video.js -->
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
-
     <script>
-        // Initialize player
-        const player = videojs('radio-player', {
+        const player = videojs('player', {
             liveui: true,
+            fluid: true,
+            responsive: true,
             html5: {
                 vhs: {
                     overrideNative: true,
-                    smoothQualityChange: true,
-                    allowSeeksWithinUnsafeLiveWindow: true
+                    smoothQualityChange: true
                 },
                 nativeAudioTracks: false,
                 nativeVideoTracks: false
-            },
-            controls: true,
-            autoplay: false,
-            preload: 'auto'
-        });
-
-        // Custom controls
-        const btnPlay = document.getElementById('btn-play');
-        const btnMute = document.getElementById('btn-mute');
-        const btnFullscreen = document.getElementById('btn-fullscreen');
-
-        btnPlay.addEventListener('click', () => {
-            if (player.paused()) {
-                player.play();
-                btnPlay.textContent = '⏸ Pause';
-            } else {
-                player.pause();
-                btnPlay.textContent = '▶ Play';
             }
         });
 
-        btnMute.addEventListener('click', () => {
-            player.muted(!player.muted());
-            btnMute.textContent = player.muted() ? '🔇 Unmute' : '🔊 Mute';
-        });
-
-        btnFullscreen.addEventListener('click', () => {
-            if (player.isFullscreen()) {
-                player.exitFullscreen();
-            } else {
-                player.requestFullscreen();
-            }
-        });
-
-        player.on('play', () => {
-            btnPlay.textContent = '⏸ Pause';
-        });
-
-        player.on('pause', () => {
-            btnPlay.textContent = '▶ Play';
-        });
-
-        // Now Playing updates
+        const npLabel = document.getElementById('np-label');
         const npTitle = document.getElementById('np-title');
         const npArtist = document.getElementById('np-artist');
-        const npLabel = document.getElementById('np-label');
-        const statusBadge = document.getElementById('status-badge');
+        const npStatus = document.getElementById('np-status');
+
+        function parseFilename(filename) {
+            // Remove extension and path
+            let name = filename.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
+            // Try to split "Artist - Title" format
+            const parts = name.split(' - ');
+            if (parts.length >= 2) {
+                return { artist: parts[0].trim(), title: parts.slice(1).join(' - ').trim() };
+            }
+            // Try underscore format "Artist_-_Title"
+            const uparts = name.split('_-_');
+            if (uparts.length >= 2) {
+                return { artist: uparts[0].replace(/_/g, ' ').trim(), title: uparts.slice(1).join(' - ').replace(/_/g, ' ').trim() };
+            }
+            return { artist: '', title: name.replace(/_/g, ' ') };
+        }
 
         async function updateNowPlaying() {
             try {
-                const response = await fetch('/api/nowplaying?' + Date.now());
-                const data = await response.json();
+                const res = await fetch('/api/nowplaying?t=' + Date.now());
+                if (!res.ok) throw new Error('API error');
+                const data = await res.json();
 
                 if (data.mode === 'live') {
                     npLabel.textContent = 'LIVE BROADCAST';
-                    npTitle.textContent = data.title || 'LIVE-SHOW';
+                    npTitle.textContent = data.title || 'Live Show';
                     npArtist.textContent = data.artist || '';
-                    statusBadge.textContent = 'LIVE';
-                    statusBadge.className = 'status-badge live';
+                    npStatus.textContent = 'LIVE';
+                    npStatus.className = 'np-status live';
                 } else {
                     npLabel.textContent = 'Now Playing';
-                    npTitle.textContent = data.title || 'Unknown Track';
-                    npArtist.textContent = data.artist || 'Unknown Artist';
-                    statusBadge.textContent = 'AutoDJ';
-                    statusBadge.className = 'status-badge autodj';
+                    npStatus.textContent = 'Program';
+                    npStatus.className = 'np-status';
+
+                    // Try sources in order: metadata, filename parsing
+                    let title = data.title;
+                    let artist = data.artist;
+
+                    // If no proper metadata, try parsing filename
+                    if ((!title || title === 'Unknown' || title === '') && data.filename) {
+                        const parsed = parseFilename(data.filename);
+                        title = parsed.title;
+                        artist = parsed.artist;
+                    }
+
+                    // Display artist - title format
+                    if (artist && title) {
+                        npArtist.textContent = artist;
+                        npTitle.textContent = title;
+                    } else if (title) {
+                        npTitle.textContent = title;
+                        npArtist.textContent = '';
+                    } else {
+                        npTitle.textContent = 'Unknown Track';
+                        npArtist.textContent = '';
+                    }
                 }
-            } catch (err) {
-                console.error('Failed to fetch now playing:', err);
+            } catch (e) {
+                // API unavailable - keep last known state or show default
+                if (npTitle.textContent === 'Ready to play') {
+                    npLabel.textContent = 'Now Playing';
+                    npTitle.textContent = 'Connecting...';
+                    npArtist.textContent = '';
+                }
+                npStatus.textContent = 'Program';
+                npStatus.className = 'np-status';
             }
         }
 
-        // Update now playing every 5 seconds
         updateNowPlaying();
         setInterval(updateNowPlaying, 5000);
 
-        // Error handling and auto-recovery
         player.on('error', () => {
-            console.log('Player error, attempting recovery...');
             setTimeout(() => {
                 player.src({ src: '/hls/current/index.m3u8', type: 'application/x-mpegURL' });
                 player.load();
@@ -365,34 +357,26 @@ cat > /var/www/radio.peoplewelike.club/index.html <<'HTMLEOF'
 HTMLEOF
 echo "    Created index.html"
 
-# Create a simple poster image placeholder
-echo "[2/3] Creating poster placeholder..."
+# Create poster with purple theme
+echo "[2/3] Creating poster..."
 cat > /var/www/radio.peoplewelike.club/poster.svg <<'SVGEOF'
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#1a1a2e"/>
-      <stop offset="50%" style="stop-color:#16213e"/>
-      <stop offset="100%" style="stop-color:#0f3460"/>
-    </linearGradient>
-  </defs>
-  <rect width="1920" height="1080" fill="url(#bg)"/>
-  <text x="960" y="480" text-anchor="middle" font-family="Arial, sans-serif" font-size="72" fill="#e94560">People We Like</text>
-  <text x="960" y="580" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" fill="#ffffff">RADIO</text>
-  <text x="960" y="700" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" fill="#888888">Loading stream...</text>
+  <rect width="1920" height="1080" fill="#0d0d14"/>
+  <text x="960" y="500" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" fill="#a78bfa">People We Like Radio</text>
+  <text x="960" y="580" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" fill="#6b7280">Click to play</text>
 </svg>
 SVGEOF
-# Convert to JPG using ffmpeg if available
+
 if command -v ffmpeg &>/dev/null; then
     ffmpeg -y -i /var/www/radio.peoplewelike.club/poster.svg \
            -vf "scale=1920:1080" \
            /var/www/radio.peoplewelike.club/poster.jpg 2>/dev/null || true
 fi
-echo "    Created poster image"
+echo "    Created poster"
 
-# Create 404 page
+# Create error pages
 echo "[3/3] Creating error pages..."
-cat > /var/www/radio.peoplewelike.club/404.html <<'404EOF'
+cat > /var/www/radio.peoplewelike.club/404.html <<'ERREOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -401,8 +385,8 @@ cat > /var/www/radio.peoplewelike.club/404.html <<'404EOF'
     <title>404 - People We Like Radio</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: -apple-system, sans-serif;
+            background: #0d0d14;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -410,31 +394,23 @@ cat > /var/www/radio.peoplewelike.club/404.html <<'404EOF'
             color: #fff;
             margin: 0;
         }
-        .error {
-            text-align: center;
-        }
-        h1 {
-            font-size: 6em;
-            margin: 0;
-            background: linear-gradient(90deg, #e94560, #f39c12);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        p { color: #888; font-size: 1.2em; }
-        a { color: #e94560; text-decoration: none; }
+        .error { text-align: center; }
+        h1 { font-size: 4em; margin: 0; color: #a78bfa; }
+        p { color: #6b7280; }
+        a { color: #a78bfa; }
     </style>
 </head>
 <body>
     <div class="error">
         <h1>404</h1>
         <p>Page not found</p>
-        <p><a href="/">← Back to Radio</a></p>
+        <p><a href="/">Back to Radio</a></p>
     </div>
 </body>
 </html>
-404EOF
+ERREOF
 
-cat > /var/www/radio.peoplewelike.club/50x.html <<'50XEOF'
+cat > /var/www/radio.peoplewelike.club/50x.html <<'ERREOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -443,8 +419,8 @@ cat > /var/www/radio.peoplewelike.club/50x.html <<'50XEOF'
     <title>Error - People We Like Radio</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: -apple-system, sans-serif;
+            background: #0d0d14;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -452,27 +428,21 @@ cat > /var/www/radio.peoplewelike.club/50x.html <<'50XEOF'
             color: #fff;
             margin: 0;
         }
-        .error {
-            text-align: center;
-        }
-        h1 {
-            font-size: 4em;
-            margin: 0;
-            color: #e94560;
-        }
-        p { color: #888; font-size: 1.2em; }
-        a { color: #e94560; text-decoration: none; }
+        .error { text-align: center; }
+        h1 { font-size: 3em; margin: 0; color: #a78bfa; }
+        p { color: #6b7280; }
+        a { color: #a78bfa; }
     </style>
 </head>
 <body>
     <div class="error">
-        <h1>Server Error</h1>
-        <p>Something went wrong. Please try again later.</p>
-        <p><a href="/">← Back to Radio</a></p>
+        <h1>Error</h1>
+        <p>Something went wrong</p>
+        <p><a href="/">Back to Radio</a></p>
     </div>
 </body>
 </html>
-50XEOF
+ERREOF
 echo "    Created error pages"
 
 # Set permissions
@@ -481,16 +451,9 @@ chmod -R 755 /var/www/radio.peoplewelike.club
 
 echo ""
 echo "=============================================="
-echo "  Video.js Player Created"
+echo "  Player Created"
 echo "=============================================="
 echo ""
-echo "Files created:"
-echo "  /var/www/radio.peoplewelike.club/index.html"
-echo "  /var/www/radio.peoplewelike.club/poster.svg"
-echo "  /var/www/radio.peoplewelike.club/poster.jpg"
-echo "  /var/www/radio.peoplewelike.club/404.html"
-echo "  /var/www/radio.peoplewelike.club/50x.html"
-echo ""
-echo "Player URL: https://radio.peoplewelike.club/"
+echo "URL: https://radio.peoplewelike.club/"
 echo ""
 echo "Next step: Run ./09-finalize.sh"

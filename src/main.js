@@ -1,0 +1,332 @@
+import './style.css';
+
+/* global videojs */
+var BACKEND = import.meta.env.VITE_BACKEND_URL || '';
+var HLS_URL = BACKEND + '/hls/current/index.m3u8';
+var API_URL = BACKEND + '/api/nowplaying';
+
+(function () {
+    'use strict';
+
+    var player = videojs('radio-player', {
+        liveui: true,
+        liveTracker: { trackingThreshold: 0, liveTolerance: 15 },
+        html5: {
+            vhs: {
+                overrideNative: true,
+                smoothQualityChange: true,
+                allowSeeksWithinUnsafeLiveWindow: true,
+                handlePartialData: true,
+                experimentalBufferBasedABR: true
+            },
+            nativeAudioTracks: false,
+            nativeVideoTracks: false
+        },
+        controlBar: {
+            playToggle: true,
+            volumePanel: { inline: true },
+            pictureInPictureToggle: true,
+            fullscreenToggle: true,
+            progressControl: true,
+            liveDisplay: true,
+            currentTimeDisplay: false,
+            timeDivider: false,
+            durationDisplay: false,
+            remainingTimeDisplay: false
+        },
+        controls: true,
+        autoplay: false,
+        preload: 'auto',
+        playsinline: true,
+        errorDisplay: false,
+        responsive: true,
+        fluid: true,
+        aspectRatio: '16:9'
+    });
+
+    player.src({ src: HLS_URL, type: 'application/x-mpegURL' });
+
+    var npLabel = document.getElementById('np-label');
+    var npTitle = document.getElementById('np-title');
+    var npArtist = document.getElementById('np-artist');
+    var npCountdown = document.getElementById('np-countdown');
+    var listenerCountEl = document.getElementById('listener-count');
+    var srcProgram = document.getElementById('src-program');
+    var srcLive = document.getElementById('src-live');
+    var card = document.getElementById('card');
+    var switchOverlay = document.getElementById('switch-overlay');
+    var switchText = document.getElementById('switch-text');
+    var currentMode = 'autodj';
+    var switching = false;
+    var recovering = false;
+    var trackEnd = 0;
+
+    // ── Session ID (stable per browser, stored in localStorage) ──
+    var SESSION_ID = '';
+    try {
+        SESSION_ID = localStorage.getItem('radio_sid') || '';
+        if (!SESSION_ID) {
+            SESSION_ID = 'rs_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+            localStorage.setItem('radio_sid', SESSION_ID);
+        }
+    } catch (e) {
+        SESSION_ID = 'rs_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+    }
+
+    // ── Listener heartbeat (only while playing) ──
+    var heartbeatTimer = null;
+
+    function sendHeartbeat() {
+        fetch(BACKEND + '/api/listeners/heartbeat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: SESSION_ID })
+        }).catch(function () {});
+    }
+
+    function startHeartbeat() {
+        if (heartbeatTimer) return;
+        sendHeartbeat();
+        heartbeatTimer = setInterval(sendHeartbeat, 25000);
+    }
+
+    function stopHeartbeat() {
+        if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+        }
+    }
+
+    function fetchListenerCount() {
+        fetch(BACKEND + '/api/listeners/count?' + Date.now())
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.active_unique_listeners !== undefined) {
+                    listenerCountEl.textContent = d.active_unique_listeners;
+                }
+            })
+            .catch(function () {});
+    }
+
+    player.on('playing', function () {
+        startHeartbeat();
+        retries = 0;
+        try {
+            var lt = player.liveTracker;
+            if (lt && lt.isLive() && lt.behindLiveEdge()) {
+                lt.seekToLiveEdge();
+            }
+        } catch (e) {}
+    });
+
+    player.on('pause', stopHeartbeat);
+    player.on('ended', stopHeartbeat);
+
+    fetchListenerCount();
+    setInterval(fetchListenerCount, 15000);
+
+    // ── Mode switching ──
+    function setMode(m) {
+        var prev = currentMode;
+        currentMode = m;
+        var live = m === 'live';
+        document.body.classList.toggle('live-mode', live);
+        srcProgram.classList.toggle('active', !live);
+        srcLive.classList.toggle('active', live);
+        card.classList.toggle('live', live);
+        if (prev !== m && prev !== null && !player.paused()) {
+            showSwitch(live ? 'Switching to Live...' : 'Switching to Program...');
+        }
+    }
+
+    function showSwitch(msg) {
+        if (switching) return;
+        switching = true;
+        switchText.textContent = msg;
+        switchOverlay.classList.add('visible');
+        setTimeout(function () {
+            switchOverlay.classList.remove('visible');
+            switching = false;
+        }, 3000);
+    }
+
+    // ── Countdown ──
+    function updateCountdown() {
+        if (trackEnd <= 0) {
+            npCountdown.textContent = currentMode === 'live' ? '' : '--:--';
+            return;
+        }
+        var remaining = Math.max(0, Math.ceil((trackEnd - Date.now()) / 1000));
+        var min = Math.floor(remaining / 60);
+        var sec = remaining % 60;
+        npCountdown.textContent = min + ':' + (sec < 10 ? '0' : '') + sec;
+    }
+
+    // ── Metadata polling ──
+    function poll() {
+        fetch(API_URL + '?' + Date.now())
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var m = d.mode === 'live' ? 'live' : 'autodj';
+                setMode(m);
+                if (m === 'live') {
+                    npLabel.textContent = 'LIVE';
+                    npTitle.textContent = d.title || 'LIVE';
+                    npArtist.textContent = d.artist || '';
+                    trackEnd = 0;
+                } else {
+                    npLabel.textContent = 'NOW PLAYING';
+                    npTitle.textContent = d.title || 'Unknown Track';
+                    npArtist.textContent = d.artist || 'Unknown Artist';
+                    var dur = parseFloat(d.duration);
+                    var sta = parseFloat(d.started_at);
+                    if (dur > 0 && sta > 0) {
+                        trackEnd = (sta + dur) * 1000;
+                    } else {
+                        trackEnd = 0;
+                    }
+                }
+                updateCountdown();
+            })
+            .catch(function () {});
+    }
+
+    poll();
+    setInterval(poll, 3000);
+    setInterval(updateCountdown, 1000);
+
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) { poll(); }
+    });
+
+    // ── Error recovery ──
+    var retries = 0;
+    player.on('error', function () {
+        if (recovering) return;
+        recovering = true;
+        if (retries >= 5) {
+            npTitle.textContent = 'Stream unavailable';
+            recovering = false;
+            retries = 0;
+            return;
+        }
+        retries++;
+        setTimeout(function () {
+            player.src({ src: HLS_URL, type: 'application/x-mpegURL' });
+            player.load();
+            player.play().catch(function () {});
+            recovering = false;
+        }, 3000);
+    });
+
+    // ── Resize handler ──
+    var rt;
+    function onRz() {
+        clearTimeout(rt);
+        rt = setTimeout(function () {
+            player.dimensions(undefined, undefined);
+        }, 200);
+    }
+    window.addEventListener('resize', onRz);
+    window.addEventListener('orientationchange', onRz);
+
+    // ── Share button ──
+    var shareBtn = document.getElementById('share-btn');
+    var shareLabel = document.getElementById('share-label');
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        // fallback
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        return Promise.resolve();
+    }
+
+    function showCopied() {
+        shareLabel.textContent = 'Copied';
+        shareBtn.classList.add('copied');
+        setTimeout(function () {
+            shareLabel.textContent = 'Share';
+            shareBtn.classList.remove('copied');
+        }, 2000);
+    }
+
+    shareBtn.addEventListener('click', function () {
+        shareBtn.disabled = true;
+        fetch(BACKEND + '/api/share/snapshot', { method: 'POST' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var url = d.share_url;
+                if (!url) throw new Error('no url');
+
+                // Mobile: try Instagram story deep-link, then Web Share API, then copy
+                var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                if (isMobile && navigator.share) {
+                    navigator.share({
+                        title: 'People We Like Radio',
+                        text: 'Listening now',
+                        url: url
+                    }).catch(function () {
+                        copyToClipboard(url).then(showCopied);
+                    });
+                } else {
+                    copyToClipboard(url).then(showCopied);
+                }
+            })
+            .catch(function () {
+                // If snapshot fails, share the base URL
+                var fallback = BACKEND || window.location.origin;
+                copyToClipboard(fallback).then(showCopied);
+            })
+            .finally(function () {
+                shareBtn.disabled = false;
+            });
+    });
+
+    // ── Schedule widget ──
+    var scheduleEl = document.getElementById('schedule');
+    if (scheduleEl) {
+        var schedUrl = BACKEND ? BACKEND + '/schedule.json' : '/schedule.json';
+        fetch(schedUrl).then(function (r) { return r.json(); }).then(function (data) {
+            var dayKeys = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+            var dayLabels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+            var now = new Date();
+            var jsDayToIdx = [6,0,1,2,3,4,5]; // JS 0=Sun→6, 1=Mon→0, etc.
+            var todayIdx = jsDayToIdx[now.getDay()];
+            var h = now.getHours();
+            var activeSlot = h >= 6 && h < 10 ? 'morning' : h >= 10 && h < 18 ? 'day' : h >= 18 && h < 22 ? 'evening' : 'night';
+
+            dayKeys.forEach(function (day, i) {
+                var a = document.createElement('a');
+                a.href = '/' + day + '.html';
+                a.className = 'schedule-day' + (i === todayIdx ? ' today' : '');
+                var html = dayLabels[i];
+                if (i === todayIdx && data[day] && data[day][activeSlot]) {
+                    html += '<span class="slot-now">' + activeSlot + '</span>';
+                }
+                a.innerHTML = html;
+                scheduleEl.appendChild(a);
+            });
+        }).catch(function () {});
+    }
+
+    // ── iOS audio unlock ──
+    var unlocked = false;
+    document.addEventListener('touchstart', function u() {
+        if (unlocked) return;
+        unlocked = true;
+        if (player.paused()) {
+            var p = player.play();
+            if (p && p.catch) p.catch(function () {});
+        }
+        document.removeEventListener('touchstart', u);
+    }, { once: true, passive: true });
+})();

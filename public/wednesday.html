@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="theme-color" content="#050505">
+<title>Schedule — People We Like Radio</title>
+<style>
+:root{--black:#050505;--card:#0a0a0a;--border:#161616;--accent:#7c3aed;--accent-dim:rgba(124,58,237,.10);--text:#c8c8c8;--text-mid:#737373;--text-dim:#404040}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--black);color:var(--text);min-height:100dvh;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.page{max-width:640px;margin:0 auto;padding:clamp(20px,5vw,48px) clamp(12px,3vw,24px);animation:fadeUp .4s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.back{display:inline-flex;align-items:center;gap:6px;color:var(--text-dim);text-decoration:none;font-size:.78em;letter-spacing:.5px;margin-bottom:clamp(16px,4vw,28px);transition:color .2s}
+.back:hover{color:var(--accent)}
+h1{font-size:clamp(1.3em,4vw,1.8em);font-weight:600;letter-spacing:-.02em;margin-bottom:clamp(12px,3vw,24px)}
+.slots{display:flex;flex-direction:column;gap:clamp(6px,1.5vw,10px)}
+.slot{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:clamp(12px,3vw,18px) clamp(14px,3vw,20px);transition:border-color .25s,background .25s}
+.slot.active{border-color:var(--accent);background:var(--accent-dim)}
+.slot-time{font-size:.7em;color:var(--text-dim);letter-spacing:.5px;margin-bottom:4px;font-variant-numeric:tabular-nums}
+.slot.active .slot-time{color:var(--accent)}
+.slot-title{font-size:1em;font-weight:600;margin-bottom:2px}
+.slot-dj{font-size:.78em;color:var(--accent);margin-bottom:2px}
+.slot-desc{font-size:.8em;color:var(--text-mid);line-height:1.4}
+footer{text-align:center;padding:clamp(24px,5vw,40px) 0 12px;color:var(--text-dim);font-size:.68em;letter-spacing:.5px}
+footer a{color:var(--accent);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="page">
+    <a class="back" href="/">&larr; Back to player</a>
+    <h1 id="day-title"></h1>
+    <div class="slots" id="slots"></div>
+    <footer>&copy; 2025 <a href="https://peoplewelike.club">People We Like</a></footer>
+</div>
+<script>
+(function(){
+    var DAY=location.pathname.replace(/^\/+/,'').replace('.html','').toLowerCase();
+    var SLOT_ORDER=['morning','day','evening','night'];
+    var DAYS=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+
+    function getActiveSlot(){
+        var now=new Date(),h=now.getHours(),today=DAYS[now.getDay()];
+        var activeDay=today,slot='';
+        if(h>=6&&h<10)slot='morning';
+        else if(h>=10&&h<18)slot='day';
+        else if(h>=18&&h<22)slot='evening';
+        else{slot='night';if(h<6){var di=DAYS.indexOf(today);activeDay=DAYS[di===0?6:di-1]}}
+        return{day:activeDay,slot:slot};
+    }
+
+    document.getElementById('day-title').textContent=DAY.charAt(0).toUpperCase()+DAY.slice(1);
+    document.title=DAY.charAt(0).toUpperCase()+DAY.slice(1)+' — People We Like Radio';
+
+    fetch('/schedule.json').then(function(r){return r.json()}).then(function(data){
+        var d=data[DAY];if(!d)return;
+        var active=getActiveSlot();
+        var container=document.getElementById('slots');
+        SLOT_ORDER.forEach(function(s){
+            var info=d[s];if(!info)return;
+            var isActive=active.day===DAY&&active.slot===s;
+            var el=document.createElement('div');
+            el.className='slot'+(isActive?' active':'');
+            el.innerHTML='<div class="slot-time">'+info.time+'</div>'
+                +'<div class="slot-title">'+info.title+'</div>'
+                +(info.dj?'<div class="slot-dj">'+info.dj+'</div>':'')
+                +'<div class="slot-desc">'+info.description+'</div>';
+            container.appendChild(el);
+        });
+    }).catch(function(){});
+})();
+</script>
+</body>
+</html>
