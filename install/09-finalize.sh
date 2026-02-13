@@ -69,6 +69,7 @@ chmod +x /usr/local/bin/autodj-video-overlay
 chmod +x /usr/local/bin/radio-switchd
 chmod +x /usr/local/bin/hls-switch
 chmod +x /usr/local/bin/radio-hls-relay
+chmod +x /usr/local/bin/radio-nowplayingd
 chmod +x /usr/local/bin/radio-ctl
 
 echo "    Permissions set"
@@ -112,13 +113,17 @@ echo "    Starting radio-hls-relay..."
 systemctl start radio-hls-relay || true
 sleep 2
 
+echo "    Starting radio-nowplayingd..."
+systemctl start radio-nowplayingd || true
+sleep 1
+
 # ============================================
 # Verify Services
 # ============================================
 echo "[5/7] Verifying services..."
 echo ""
 
-SERVICES="nginx liquidsoap-autodj autodj-video-overlay radio-switchd radio-hls-relay"
+SERVICES="nginx liquidsoap-autodj autodj-video-overlay radio-switchd radio-hls-relay radio-nowplayingd"
 ALL_OK=true
 
 for svc in $SERVICES; do

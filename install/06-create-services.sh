@@ -137,9 +137,31 @@ RELAYSVCEOF
 echo "    Created radio-hls-relay.service"
 
 # ============================================
-# 5. Runtime Directory tmpfiles
+# 5. Radio Now-Playing Daemon Service
 # ============================================
-echo "[5/5] Creating tmpfiles configuration..."
+echo "[5/6] Creating radio-nowplayingd service..."
+cat > /etc/systemd/system/radio-nowplayingd.service <<'NPSVCEOF'
+[Unit]
+Description=Radio now-playing metadata daemon (reads Liquidsoap log, writes JSON)
+After=liquidsoap-autodj.service radio-switchd.service
+Wants=liquidsoap-autodj.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/radio-nowplayingd
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+NPSVCEOF
+echo "    Created radio-nowplayingd.service"
+
+# ============================================
+# 6. Runtime Directory tmpfiles
+# ============================================
+echo "[6/6] Creating tmpfiles configuration..."
 cat > /etc/tmpfiles.d/radio.conf <<'TMPFILESEOF'
 # Radio runtime directories
 d /run/radio 0755 root root -
@@ -163,6 +185,7 @@ systemctl enable liquidsoap-autodj.service
 systemctl enable autodj-video-overlay.service
 systemctl enable radio-switchd.service
 systemctl enable radio-hls-relay.service
+systemctl enable radio-nowplayingd.service
 
 echo ""
 echo "=============================================="
@@ -174,6 +197,7 @@ echo "  - liquidsoap-autodj.service    (Liquidsoap audio engine)"
 echo "  - autodj-video-overlay.service (FFmpeg video overlay)"
 echo "  - radio-switchd.service        (Live/AutoDJ switch daemon)"
 echo "  - radio-hls-relay.service      (Seamless HLS relay)"
+echo "  - radio-nowplayingd.service    (Now-playing metadata daemon)"
 echo ""
 echo "Startup order:"
 echo "  1. nginx"
@@ -181,6 +205,7 @@ echo "  2. liquidsoap-autodj"
 echo "  3. autodj-video-overlay"
 echo "  4. radio-switchd"
 echo "  5. radio-hls-relay"
+echo "  6. radio-nowplayingd"
 echo ""
 echo "Management commands:"
 echo "  radio-ctl start   - Start all services"

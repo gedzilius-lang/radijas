@@ -14,16 +14,17 @@ echo "[1/2] Creating Liquidsoap configuration..."
 cat > /etc/liquidsoap/radio.liq <<'LIQEOF'
 #!/usr/bin/liquidsoap
 # People We Like Radio - AutoDJ Configuration
-# Liquidsoap 2.x compatible
+# Liquidsoap 2.0.x compatible (uses .set() syntax)
 
 # ============================================
 # SETTINGS
 # ============================================
 
-settings.server.telnet := true
-settings.server.telnet.port := 1234
-settings.log.file.path := "/var/log/liquidsoap/radio.log"
-settings.log.level := 3
+settings.server.telnet.set(true)
+settings.server.telnet.port.set(1234)
+settings.log.file.set(true)
+settings.log.file.path.set("/var/log/liquidsoap/radio.log")
+settings.log.level.set(3)
 
 # ============================================
 # MUSIC LIBRARY PATHS
@@ -233,45 +234,22 @@ radio = normalize(radio)
 # METADATA HANDLING
 # ============================================
 
-# JSON file for now-playing data
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
-
-def write_nowplaying(m)
-  title = m["title"]
-  artist = m["artist"]
-  album = m["album"]
-  filename = m["filename"]
-
-  # Create JSON output
-  json_data = '{"title":"#{title}","artist":"#{artist}","album":"#{album}","filename":"#{filename}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
-
-  # Write to file
-  file.write(data=json_data, nowplaying_file)
-
-  # Log
-  print("Now playing: #{artist} - #{title}")
-
-  # Return metadata unchanged
-  m
-end
-
-# Apply metadata handler
-radio = metadata.map(write_nowplaying, radio)
+# No custom metadata callback - Liquidsoap naturally logs track changes
+# (e.g. "Prepared ..." lines). The radio-nowplayingd daemon parses
+# the log file to extract track info.
 
 # ============================================
 # OUTPUT TO RTMP
 # ============================================
 
-# Output audio to nginx-rtmp autodj_audio application
-output.rtmp(
-  host="127.0.0.1",
-  port=1935,
-  app="autodj_audio",
-  stream="stream",
-  encoder="libfdk_aac",
-  bitrate=128,
-  samplerate=44100,
-  stereo=true,
+# Output audio via external FFmpeg to RTMP
+# output.url with %ffmpeg silently fails in Liquidsoap 2.0.2.
+# Pipe WAV to external ffmpeg which encodes AAC and pushes to RTMP.
+output.external(
+  %wav,
+  id="rtmp_out",
+  fallible=true,
+  "ffmpeg -hide_banner -loglevel warning -nostdin -f wav -i pipe:0 -c:a aac -b:a 128k -ar 44100 -ac 2 -f flv rtmp://127.0.0.1:1935/autodj_audio/stream",
   radio
 )
 LIQEOF
@@ -285,10 +263,11 @@ cat > /etc/liquidsoap/radio-simple.liq <<'LIQSIMPLEEOF'
 # People We Like Radio - Simplified AutoDJ Configuration
 # Use this if the main config has issues
 
-settings.server.telnet := true
-settings.server.telnet.port := 1234
-settings.log.file.path := "/var/log/liquidsoap/radio.log"
-settings.log.level := 3
+settings.server.telnet.set(true)
+settings.server.telnet.port.set(1234)
+settings.log.file.set(true)
+settings.log.file.path.set("/var/log/liquidsoap/radio.log")
+settings.log.level.set(3)
 
 # Music root
 music_root = "/var/lib/radio/music"
@@ -312,30 +291,14 @@ radio = crossfade(duration=3.0, radio)
 # Normalize
 radio = normalize(radio)
 
-# Metadata JSON
-nowplaying_file = "/var/www/radio/data/nowplaying.json"
+# No custom metadata callback - parsed from log by radio-nowplayingd
 
-def write_nowplaying(m)
-  title = m["title"]
-  artist = m["artist"]
-  json_data = '{"title":"#{title}","artist":"#{artist}","mode":"autodj","updated":"#{time.string("%Y-%m-%dT%H:%M:%SZ")}"}'
-  file.write(data=json_data, nowplaying_file)
-  print("Now playing: #{artist} - #{title}")
-  m
-end
-
-radio = metadata.map(write_nowplaying, radio)
-
-# Output to RTMP
-output.rtmp(
-  host="127.0.0.1",
-  port=1935,
-  app="autodj_audio",
-  stream="stream",
-  encoder="libfdk_aac",
-  bitrate=128,
-  samplerate=44100,
-  stereo=true,
+# Output via external FFmpeg to RTMP
+output.external(
+  %wav,
+  id="rtmp_out",
+  fallible=true,
+  "ffmpeg -hide_banner -loglevel warning -nostdin -f wav -i pipe:0 -c:a aac -b:a 128k -ar 44100 -ac 2 -f flv rtmp://127.0.0.1:1935/autodj_audio/stream",
   radio
 )
 LIQSIMPLEEOF
