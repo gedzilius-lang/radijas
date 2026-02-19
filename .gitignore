@@ -1,5 +1,6 @@
 *.bak
-*.log
 __pycache__/
 *.pyc
 .env
+# Exclude temp ffmpeg logs but keep session logs
+/tmp/*.log

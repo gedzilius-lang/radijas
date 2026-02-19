@@ -1,0 +1,164 @@
+=== Live Ingest Test Thu Feb 19 10:56:34 UTC 2026 ===
+[1] Baseline status:
+{"source": "autodj", "seq": 654325, "updated": "2026-02-19T11:56:34+0100"}
+[2] Starting RTMP stream to rtmp://localhost:1935/club/people ...
+  ffmpeg PID=2440570
+[3] Waiting up to 10s for switch to flip to live...
+  t+1s: source=autodj
+  t+2s: source=autodj
+  t+3s: source=autodj
+  t+4s: source=autodj
+  t+5s: source=autodj
+  t+6s: source=autodj
+  t+7s: source=autodj
+  t+8s: source=autodj
+  t+9s: source=autodj
+  t+10s: source=autodj
+
+[4] Switch logs:
+[entrypoint] Starting radio-switchd + radio-hls-relay
+[switchd] active=autodj (nclients_club=0)
+[switchd] active=live (nclients_club=1)
+[4b] Auth logs:
+[auth] Listening on 0.0.0.0:8088
+[auth] ALLOW  app='club' name='people'
+
+[5] Killing ffmpeg (PID=2440570)...
+[6] Waiting up to 10s for switch to return to autodj...
+  t+1s: source=autodj
+  PASS: returned to autodj in 1s
+
+[7] Final switch log:
+[entrypoint] Starting radio-switchd + radio-hls-relay
+[switchd] active=autodj (nclients_club=0)
+[switchd] active=live (nclients_club=1)
+[switchd] active=autodj (nclients_club=0)
+=== Test complete ===
+
+=== Live Ingest Test #2 — Extended duration Thu Feb 19 10:58:24 UTC 2026 ===
+[1] Baseline:
+{"source": "autodj", "seq": 656461, "updated": "2026-02-19T11:58:23+0100"}
+[2] Starting 45s RTMP stream to rtmp://localhost:1935/club/people ...
+  PID=2441013
+[3] Polling source every 1s for 20s...
+  t+1s: status=autodj  live_segs=3
+  t+2s: status=autodj  live_segs=3
+  t+3s: status=autodj  live_segs=3
+  t+4s: status=autodj  live_segs=3
+  t+5s: status=autodj  live_segs=3
+  t+6s: status=autodj  live_segs=3
+  t+7s: status=autodj  live_segs=3
+  t+8s: status=autodj  live_segs=3
+  t+9s: status=autodj  live_segs=3
+  t+10s: status=autodj  live_segs=4
+  t+11s: status=autodj  live_segs=4
+  t+12s: status=autodj  live_segs=4
+  t+13s: status=autodj  live_segs=4
+  t+14s: status=autodj  live_segs=4
+  t+15s: status=autodj  live_segs=4
+  t+16s: status=autodj  live_segs=4
+  t+17s: status=autodj  live_segs=4
+  t+18s: status=autodj  live_segs=4
+  t+19s: status=autodj  live_segs=4
+  t+20s: status=autodj  live_segs=5
+
+[4] Auth log:
+[auth] Listening on 0.0.0.0:8088
+[auth] ALLOW  app='club' name='people'
+[auth] ALLOW  app='club' name='people'
+[4b] Switch log:
+[entrypoint] Starting radio-switchd + radio-hls-relay
+[switchd] active=autodj (nclients_club=0)
+[switchd] active=live (nclients_club=1)
+[switchd] active=autodj (nclients_club=0)
+[switchd] active=live (nclients_club=1)
+
+[5] Killing stream...
+[6] Polling return to autodj for 12s...
+  t+1s after kill: status=autodj
+  PASS: returned to autodj in 1s
+
+[switchd] active=autodj (nclients_club=0)
+[switchd] active=live (nclients_club=1)
+[switchd] active=autodj (nclients_club=0)
+[switchd] active=live (nclients_club=1)
+[switchd] active=autodj (nclients_club=0)
+=== Test #2 complete ===
+
+=== DEFINITIVE Live Ingest Test Thu Feb 19 11:36:13 UTC 2026 ===
+[1] Baseline:
+{"source": "autodj", "seq": 16585, "updated": "2026-02-19T12:36:13+0100"}
+[2] Starting 35s live RTMP stream...
+[3] Polling for 'live' switch (10s max)...
+  t+1s: autodj
+  t+2s: autodj
+  t+3s: autodj
+  t+4s: autodj
+  t+5s: autodj
+  t+6s: autodj
+  t+7s: autodj
+  t+8s: autodj
+  t+9s: autodj
+  t+10s: autodj
+  FAIL: did not switch to live within 10s
+
+[4] Auth + Switch logs:
+[auth] ALLOW  app='club' name='people'
+[auth] ALLOW  app='club' name='people'
+[auth] ALLOW  app='club' name='people'
+[entrypoint] Starting radio-switchd + radio-hls-relay
+[switchd] active=autodj (nclients_club=0)
+[switchd] active=live (nclients_club=1)
+
+[5] Killing stream...
+[6] Polling for autodj return (10s max)...
+  t+1s after kill: live
+  t+2s after kill: autodj
+  PASS: returned to autodj in 2s
+
+=== RESULT: switch=0s return=2s ===
+
+=== Latency Probe Test Thu Feb 19 11:38:51 UTC 2026 ===
+  t=1s: status=autodj  live_segs=1
+  t=2s: status=autodj  live_segs=1
+  t=3s: status=autodj  live_segs=1
+  t=4s: status=autodj  live_segs=1
+  t=5s: status=autodj  live_segs=1
+  t=6s: status=autodj  live_segs=1
+  t=7s: status=autodj  live_segs=1
+  t=8s: status=autodj  live_segs=1
+  t=9s: status=autodj  live_segs=1
+  t=10s: status=live  live_segs=2
+  PASS: live switch at t=10s
+
+[relay debug - live m3u8 right now]:
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-TARGETDURATION:10
+#EXT-X-DISCONTINUITY
+#EXTINF:10.000,
+people-0.ts
+
+=== FINAL Auth Test — DJ-accurate (2s keyframe) Thu Feb 19 11:40:29 UTC 2026 ===
+[switch to live — poll 15s]
+  t=1s: autodj  live_segs=1
+  t=2s: autodj  live_segs=1
+  t=3s: autodj  live_segs=1
+  t=4s: autodj  live_segs=1
+  t=5s: autodj  live_segs=1
+  t=6s: autodj  live_segs=2
+  t=7s: live  live_segs=2
+  PASS: switch to live in 7s
+
+[kill stream, poll return 15s]
+  t+1s after kill: autodj
+  PASS: return to autodj in 1s
+
+[switchd] active=live (nclients_club=1)
+[switchd] active=autodj (nclients_club=0)
+[switchd] active=live (nclients_club=1)
+[switchd] active=autodj (nclients_club=0)
+[switchd] active=live (nclients_club=1)
+[switchd] active=autodj (nclients_club=0)
+=== FINAL RESULT: switch=7s  return=1s ===
