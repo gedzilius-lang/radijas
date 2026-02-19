@@ -1,0 +1,88 @@
+version: "3.8"
+
+# People We Like Radio — Docker v2 Stack
+# Usage: docker compose up -d
+# Staging: RTMP_PORT=1936 HLS_ROOT=/var/www/hls_v2 docker compose up -d
+
+services:
+  rtmp-auth:
+    build: ./docker/rtmp-auth
+    container_name: radio-rtmp-auth
+    restart: unless-stopped
+
+  rtmp:
+    image: tiangolo/nginx-rtmp:latest
+    container_name: radio-rtmp
+    depends_on:
+      - rtmp-auth
+    ports:
+      - "${RTMP_PORT:-1935}:1935"
+    volumes:
+      - ./docker/rtmp/nginx.conf:/etc/nginx/nginx.conf:ro
+      - hls-data:/var/www/hls
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8089/rtmp_stat || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  autodj:
+    build: ./docker/autodj
+    container_name: radio-autodj
+    depends_on:
+      rtmp:
+        condition: service_healthy
+    volumes:
+      - /var/lib/radio/music:/music:ro
+      - /var/lib/radio/loops:/loops:ro
+      - status-data:/var/www/radio/data
+    environment:
+      - TZ=Europe/Zurich
+      - RTMP_OUT=rtmp://rtmp:1935/autodj/index
+      - NOWPLAYING_FILE=/var/www/radio/data/nowplaying
+    restart: unless-stopped
+
+  switch:
+    build: ./docker/switch
+    container_name: radio-switch
+    depends_on:
+      rtmp:
+        condition: service_healthy
+    volumes:
+      - hls-data:/var/www/hls
+      - status-data:/var/www/radio/data
+    environment:
+      - TZ=Europe/Zurich
+      - RTMP_STAT_URL=http://rtmp:8089/rtmp_stat
+      - HLS_AUTODJ=/var/www/hls/autodj
+      - HLS_LIVE=/var/www/hls/live
+      - HLS_CURRENT=/var/www/hls/current
+      - STATUS_FILE=/var/www/radio/data/status.json
+    restart: unless-stopped
+
+  web:
+    image: nginx:alpine
+    container_name: radio-web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./docker/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/web/www:/var/www/player:ro
+      - hls-data:/var/www/hls:ro
+      - status-data:/var/www/status:ro
+    restart: unless-stopped
+
+volumes:
+  hls-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HLS_ROOT:-/var/www/hls}
+  status-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${STATUS_ROOT:-/var/www/radio/data}
