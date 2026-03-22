@@ -7,6 +7,16 @@ Complete installation scripts for deploying a 24/7 radio station with AutoDJ and
 SSH to your VPS as root and run:
 
 ```bash
+# One-shot full install (root shell paste)
+set -euo pipefail
+cd /path/to/install
+chmod +x *.sh
+./deploy-all.sh
+```
+
+If you prefer a step-by-step install with checkpoints:
+
+```bash
 # Upload the install folder to your VPS, then:
 cd /path/to/install
 chmod +x *.sh
@@ -99,6 +109,77 @@ Upload to schedule-based folders:
 ```
 
 Files are shuffled within each folder. The system automatically switches based on the server's clock.
+
+### Schedule setup (recommended first step, no live input required)
+
+1) Create the schedule folder tree and apply permissions:
+
+```bash
+install -d -m 775 /var/lib/radio/music/{default,monday/{morning,day,night},tuesday/{morning,day,night},wednesday/{morning,day,night},thursday/{morning,day,night},friday/{morning,day,night},saturday/{morning,day,night},sunday/{morning,day,night}}
+chown -R root:audio /var/lib/radio/music
+chmod -R 775 /var/lib/radio/music
+```
+
+2) Upload MP3s into the correct time-slot folders (example: Monday morning):
+
+```bash
+cp "/path/to/Artist - Title.mp3" /var/lib/radio/music/monday/morning/
+```
+
+3) Restart AutoDJ (no live signal needed):
+
+```bash
+systemctl restart liquidsoap-autodj autodj-video-overlay radio-switchd radio-hls-relay
+```
+
+4) Verify AutoDJ + relay are producing output:
+
+```bash
+ls -lah /var/www/hls/autodj | head
+ls -lah /var/www/hls/current | head
+cat /run/radio/active
+```
+
+If there is no live ingest, `/run/radio/active` should remain `autodj`, which is the expected behavior.
+
+### Website + now-playing checks (before live ingest)
+
+The web player reads the stable playlist and the now-playing JSON. Verify both:
+
+```bash
+curl -fsS http://127.0.0.1/hls/current/index.m3u8 | head -20
+curl -fsS http://127.0.0.1/api/nowplaying | jq .
+```
+
+If TLS is not configured yet (invalid certificate), use `http://127.0.0.1` locally until SSL is resolved.
+
+### If the website shows the wrong page (not the radio player)
+
+This typically means another nginx site is winning the server block match. Fix in this order:
+
+1) Verify the radio site is enabled and the default site is disabled:
+
+```bash
+ls -lah /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+ln -sf /etc/nginx/sites-available/radio.peoplewelike.club.conf /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+```
+
+2) Confirm nginx routes `radio.peoplewelike.club` to the correct web root:
+
+```bash
+nginx -T | sed -n '/server_name radio.peoplewelike.club/,/}/p'
+ls -lah /var/www/radio.peoplewelike.club/index.html
+```
+
+3) Test locally with an explicit Host header (bypasses DNS issues):
+
+```bash
+curl -fsS -H "Host: radio.peoplewelike.club" http://127.0.0.1/ | head -n 5
+```
+
+If the local Host test shows the correct HTML, but the public URL does not, the issue is DNS or TLS (certificate/SAN mismatch).
 
 ### Video Loops (.mp4)
 
